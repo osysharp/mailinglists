@@ -1,0 +1,11 @@
+// The producer's test project for Osysharp.MailingLists — a small app with accounts, staff and an outbox, using the
+// lists as any app would.
+app MailingListsKitTests {
+  model "model/**/*.osy";
+  tests "**/*.test.osy";
+  use Osysharp.MailingLists@0;
+  use Osysharp.EmailTemplates@0;
+  use Osysharp.Workflow;
+  use Osysharp.Ui;
+  use Osysharp.Csv@0;
+}

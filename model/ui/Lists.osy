@@ -1,0 +1,227 @@
+// The lists on the page: the sign-up form, the page a confirm link opens, the page an unsubscribe link opens, a
+// signed-in reader's choices, and the desk. Written in the theme's tokens, so a store's theme dresses them.
+
+namespace Osysharp.MailingLists;
+
+using Osysharp.Ui;
+
+/// A sign-up form: an address and a button, with the words the reader agrees to beside it — exactly what is recorded
+/// as their consent. After it, the reader is told to look in their inbox (the same answer for any address).
+[Composable]
+[AllowAnonymous]
+public component ListSignupForm(string listKey, string words, string source = "form", string button = "Sign up",
+                                string placeholder = "Your email address",
+                                string done = "Nearly there. We have sent you a mail: press the button in it to confirm.") {
+  string email = "";
+  string problem = "";
+  bool sent = false;
+
+  action Send() {
+    problem = SignUpToList(email, listKey, source, words);
+    sent = problem == "";
+  }
+
+  render {
+    Stack(gap: 2, label: "Sign up") {
+      if (sent) {
+        Text(done, role: UiRole.Status, fontWeight: FontWeight.Semibold);
+      } else {
+        Row(gap: 2, align: Align.End, wrap: Wrapping.Wrap) {
+          Box(grow: 1, minW: "14rem") { Field("Email", value: email, type: "email", placeholder: placeholder, onEnter: Send); }
+          Button(button, onPress: Send, tone: Tone.Primary);
+        }
+        Text(words, fontSize: FontSize.Label, color: Colors.TextMuted);
+        if (problem != "") { Text(problem, role: UiRole.Alert, color: Colors.Danger, fontSize: FontSize.Label); }
+      }
+    }
+  }
+}
+
+/// What a confirm link opens: it confirms the address, and says so. The platform has checked the link before the page
+/// opened — a forged, expired or already-revoked one never gets here (the app's `InvalidLinkSurface` answers it).
+[Composable]
+[AllowAnonymous]
+public component ListConfirm(ListConfirmation link, string heading = "You are on the list",
+                             string body = "Thank you for confirming. The next letter comes to your inbox.") {
+  string problem = "";
+  bool done = false;
+  on mount {
+    problem = ConfirmSubscription(link);
+    done = true;
+  }
+  render {
+    Stack(gap: 3, label: "Confirmation") {
+      if (!done) { Text("Confirming…", color: Colors.TextMuted); }
+      else if (problem == "") {
+        Text(heading, fontFamily: Font.Display, fontSize: FontSize.Title, fontWeight: FontWeight.Bold, lineHeight: "1.1");
+        Text(body);
+      } else {
+        Text("That did not work", fontFamily: Font.Display, fontSize: FontSize.Title, fontWeight: FontWeight.Bold, lineHeight: "1.1");
+        Text(problem, role: UiRole.Alert);
+      }
+    }
+  }
+}
+
+/// A list's name as a heading: its first letter upper-case. A name is written to read inside a sentence ("send me
+/// the Tuesday letter"), and a row or a switch is not a sentence.
+public string ListTitle(string name) {
+  return name == "" ? name : name.Substring(0, 1).ToUpper() + name.Substring(1);
+}
+
+/// What a mail's "manage your mail" link opens: the address it came to, every list with a switch that shows whether
+/// the reader is on it, and "Unsubscribe from everything". Nobody signs in — the link is the permission, it reads only
+/// the reader it was sent to, and the platform has checked it before the page opens.
+[Composable]
+[AllowAnonymous]
+public component ListPreferences(ListReaderLink link, string heading = "Your mail from us") {
+  List<ListChoice> choices = [];
+  string address = "";
+  string note = "";
+
+  on mount { Load(); }
+  action Load() {
+    choices = ReaderChoices(link);
+    address = ReaderAddress(link);
+  }
+  action Toggle(ListChoice c) {
+    var problem = c.On ? LeaveWithLink(link, c.Key) : JoinWithLink(link, c.Key, $"Yes, send me {c.Name}. I can leave at any time.");
+    note = problem != "" ? problem : c.On ? $"You will no longer get {c.Name}." : $"You are on {c.Name}.";
+    choices = ReaderChoices(link);
+  }
+  action LeaveAll() {
+    var problem = LeaveWithLink(link, "");
+    note = problem != "" ? problem : "Done. You will not get mail from any of our lists.";
+    choices = ReaderChoices(link);
+  }
+
+  render {
+    Stack(gap: 5, label: "Your mail from us") {
+      if (heading != "") {
+        Text(heading, fontFamily: Font.Display, fontSize: FontSize.Title, fontWeight: FontWeight.Bold, lineHeight: "1.1");
+      }
+      if (address != "") { Text($"For {address}. Switch any of them on or off.", color: Colors.TextMuted); }
+      Stack(gap: 4) {
+        foreach (var c in choices) { ListChoiceRow(c, () => Toggle(c)); }
+      }
+      if (note != "") { Text(note, role: UiRole.Status, fontWeight: FontWeight.Semibold); }
+      // With one list, its own switch already is "everything".
+      if (choices.Count > 1 && choices.Any(c => c.On)) {
+        Row() { Button("Unsubscribe from everything", onPress: LeaveAll, tone: Tone.Ghost); }
+      }
+    }
+  }
+}
+
+/// A signed-in reader's lists, from their account: one switch per list. Joining sends a confirmation to an address
+/// that has not confirmed yet — an account is not proof the mailbox is theirs. `email` is the account's address; the
+/// app grants its users their own row (`where Email == user.Email`, README).
+[Composable]
+public component ListChoices(string email, string source = "account") {
+  List<ListChoice> choices = [];
+  string note = "";
+  on mount { choices = ListChoicesFor(email); }
+  action Toggle(ListChoice c) {
+    note = ChooseList(email, c.Key, !c.On, source, c.On ? "" : $"Yes, send me {c.Name}. I can leave at any time.");
+    choices = ListChoicesFor(email);
+    if (note == "") {
+      var now = choices.FirstOrDefault(x => x.Key == c.Key);
+      if (now != null && now.Waiting) { note = $"We have sent a mail to {email}: press the button in it to confirm."; }
+    }
+  }
+  render {
+    Stack(gap: 3, label: "Mail from us") {
+      foreach (var c in choices) { ListChoiceRow(c, () => Toggle(c)); }
+      if (note != "") { Text(note, role: UiRole.Status, fontSize: FontSize.Label); }
+    }
+  }
+}
+
+/// One list on a reader's account: its switch, what it sends, and where the address stands.
+[Composable]
+component ListChoiceRow(ListChoice choice, Action onToggle) {
+  bool on = choice.On;
+  render {
+    Stack(gap: 1, label: ListTitle(choice.Name)) {
+      Switch(ListTitle(choice.Name), value: on, onToggle: onToggle);
+      if (choice.Description != "") { Text(choice.Description, color: Colors.TextMuted, fontSize: FontSize.Label); }
+      if (choice.Waiting) { Text("Waiting for you to confirm from your inbox.", fontSize: FontSize.Label); }
+      if (choice.Stopped) { Text("Mail to this address has stopped: it bounced, or a mail was marked as spam.", fontSize: FontSize.Label); }
+    }
+  }
+}
+
+/// The desk: every list with how many it reaches, who is on it (a hundred at a time, newest first), the file to take
+/// it elsewhere, and a reader stopped or erased. It shows what the caller can see — staff, when the app grants them the
+/// lists.
+[Composable]
+public component DeskMailingLists() {
+  List<ListSummary> lists = [];
+  List<ReaderRow> readers = [];
+  string listKey = "";
+  string exportLink = "";
+  Guid? erasing = null;
+  string note = "";
+  int shown = 100;
+
+  on mount { Load(); }
+  action Load() {
+    lists = ListSummaries();
+    readers = ListReaders(listKey, shown);
+  }
+  action Show(string key) { listKey = key; exportLink = ""; shown = 100; Load(); }
+  action More() { shown = shown + 100; readers = ListReaders(listKey, shown); }
+  action Export() { exportLink = ReadersFileLink(listKey); }
+  action AskErase(ReaderRow r) { erasing = r.Id; }
+  action Erase(ReaderRow r) {
+    EraseReader(r.Email);
+    erasing = null;
+    note = $"{r.Email} is erased.";
+    Load();
+  }
+
+  render {
+    Stack(gap: 5, w: "100%") {
+      Row(gap: 3, wrap: Wrapping.Wrap) {
+        foreach (var l in lists) {
+          Stack(gap: 1, p: 4, minW: "12rem", borderW: 1, border: listKey == l.Key ? Colors.OnBg : Colors.Border, label: ListTitle(l.Name)) {
+            Text(ListTitle(l.Name), fontWeight: FontWeight.Semibold);
+            Text($"{l.Readers} {(l.Readers == 1 ? "reader" : "readers")} · {l.Waiting} waiting to confirm",
+                 fontSize: FontSize.Label, color: Colors.TextMuted);
+            Row() { Button(listKey == l.Key ? "Showing" : "Show", onPress: () => Show(l.Key), size: Size.Sm); }
+          }
+        }
+      }
+      Row(gap: 3, align: Align.Center, wrap: Wrapping.Wrap) {
+        if (listKey != "") { Button("Everyone", onPress: () => Show(""), size: Size.Sm, tone: Tone.Ghost); }
+        Button("Export as CSV", onPress: Export, size: Size.Sm);
+        if (exportLink != "") { TextLink("Download the file", to: exportLink); }
+      }
+      if (note != "") { Text(note, role: UiRole.Status); }
+      if (readers.Count == 0) { Text("Nobody here yet.", color: Colors.TextMuted); }
+      Stack(gap: 0, label: "Readers") {
+        foreach (var r in readers) {
+          Row(justify: Justify.Between, align: Align.Center, gap: 3, py: 2, borderTW: 1, border: Colors.Border,
+              wrap: Wrapping.Wrap, label: r.Email) {
+            Stack(gap: 0, minW: "0") {
+              Text(r.Name == "" ? r.Email : $"{r.Name} · {r.Email}");
+              Text($"{r.State} · since {r.Since}{(r.Lists == "" ? "" : " · " + r.Lists)}{(r.Stopped == "" ? "" : " · " + r.Stopped)}",
+                   fontSize: FontSize.Label, color: Colors.TextMuted);
+            }
+            if (erasing == r.Id) {
+              Row(gap: 2, align: Align.Center) {
+                Text("Erase everything about them?", fontSize: FontSize.Label);
+                Button("Erase", onPress: () => Erase(r), size: Size.Sm, tone: Tone.Danger);
+                Button("Keep", onPress: () => { erasing = null; }, size: Size.Sm, tone: Tone.Ghost);
+              }
+            } else {
+              Button("Erase…", onPress: () => AskErase(r), size: Size.Sm, tone: Tone.Ghost);
+            }
+          }
+        }
+      }
+      // A hundred at a time, newest first; the export above is the whole list.
+      if (readers.Count == shown) { Row() { Button("Show more readers", onPress: More, size: Size.Sm, tone: Tone.Ghost); } }
+    }
+  }
+}

@@ -1,0 +1,57 @@
+// A signed-in reader's lists, from their account — or staff's view of one reader. Both work on the reader the CALLER
+// can see: a user their own address (the app's `OwnsListAddress`), staff every address (`RunsMailingLists`).
+
+namespace Osysharp.MailingLists;
+
+using Osysharp.Workflow;
+
+/// One declared list, and where an address stands with it.
+public class ListChoice {
+  public string Key = "";
+  public string Name = "";
+  public string Description = "";
+  /// On the list — they want it.
+  public bool On = false;
+  /// On it, but the address is not confirmed yet: nothing is sent until it is.
+  public bool Waiting = false;
+  /// On it, but mail to the address is stopped (it bounced, or was marked as spam).
+  public bool Stopped = false;
+}
+
+/// Every declared list and where `email` stands with it — as far as the caller can see. A caller who cannot see the
+/// address sees it on no list.
+public List<ListChoice> ListChoicesFor(string email) {
+  return ChoicesOf(ListSubscriber.FirstOrDefault(x => x.Email == ListAddress(email)), false);
+}
+
+/// Where `reader` stands with every declared list — or, with `offeredOnly`, with the lists offered to anyone and any
+/// they are on (the preferences page leaves out a list you only join from code, unless you are on it).
+List<ListChoice> ChoicesOf(ListSubscriber? reader, bool offeredOnly) {
+  List<ListChoice> rows = [];
+  foreach (var l in DeclaredLists()) {
+    var on = reader != null && reader.State != SubscriberState.Erased
+      && reader.Memberships.Any(m => m.List.Key == l.Key && m.Active);
+    if (offeredOnly && !l.Offered && !on) { continue; }
+    rows.Add(new ListChoice {
+      Key = l.Key, Name = l.Name, Description = l.Description, On = on,
+      Waiting = on && reader!.State == SubscriberState.Pending,
+      Stopped = on && reader!.State == SubscriberState.Suppressed,
+    });
+  }
+  return rows;
+}
+
+/// `email` joins (`on`) or leaves `listKey`. `source` says where ("account", "checkout"), `words` what they agreed to.
+/// An address the caller cannot see yet, or one that is not confirmed, is SIGNED UP — and asked to confirm — exactly
+/// as a form would: an account is not proof the mailbox is theirs. Answers "" or the sentence to show.
+public string ChooseList(string email, string listKey, bool on, string source, string words) {
+  if (ListDeclared(listKey) == null) { return $"There is no list '{listKey}'."; }
+  var reader = ListSubscriber.FirstOrDefault(x => x.Email == ListAddress(email));
+  if (on) {
+    if (reader == null || reader.State != SubscriberState.Confirmed) { return SignUpToList(email, listKey, source, words); }
+    SubscriberLifecycle.CorrelateJoin(reader.Id, listKey, source, words);
+    return "";
+  }
+  if (reader != null) { SubscriberLifecycle.CorrelateLeave(reader.Id, listKey, source); }
+  return "";
+}

@@ -1,0 +1,246 @@
+// sv (Svenska): the words of Osysharp.MailingLists, translated.
+// Written and kept in step with the source by `osy translate`: a new text arrives as `=> null`, a text
+// whose source changed keeps its old translation in a `was` clause. The words are yours to edit.
+// Source language: en.
+
+translations sv {
+  // ── ChooseList ──
+  /// ChooseList · text on the page
+  /// placeholders: {listKey} = listKey (string)
+  /// shown through ChooseList()
+  /// also in SignUpToList
+  /// also in JoinWithLink
+  text "There is no list '{listKey}'." => "Det finns ingen lista '{listKey}'.";
+
+  // ── ConfirmSubscription ──
+  /// ConfirmSubscription · text on the page
+  /// shown through ConfirmSubscription()
+  text "That address can no longer be confirmed." => "Den adressen kan inte längre bekräftas.";
+
+  // ── DeskMailingLists ──
+  /// DeskMailingLists · a control's name for screen readers
+  /// beside: "Export as CSV"
+  accessibleName "Readers" => "Läsare";
+  /// DeskMailingLists · a button's label · at most ~11 characters
+  /// shown through Button.label
+  /// beside: "Erase everything about them?", "Keep"
+  button "Erase" => "Radera";
+  /// DeskMailingLists · a button's label · at most ~12 characters
+  /// shown through Button.label
+  button "Erase…" => "Radera…";
+  /// DeskMailingLists · a button's label · at most ~14 characters
+  /// shown through Button.label
+  button "Everyone" => "Alla";
+  /// DeskMailingLists · a button's label · at most ~19 characters
+  /// shown through Button.label
+  button "Export as CSV" => "Exportera som CSV";
+  /// DeskMailingLists · a button's label · at most ~10 characters
+  /// shown through Button.label
+  /// beside: "Erase everything about them?", "Erase"
+  button "Keep" => "Behåll";
+  /// DeskMailingLists · a button's label · at most ~10 characters
+  /// shown through Button.label
+  button "Show" => "Visa";
+  /// DeskMailingLists · a button's label · at most ~13 characters
+  /// shown through Button.label
+  button "Showing" => "Visas";
+  /// DeskMailingLists · a link · at most ~24 characters
+  /// shown through TextLink.label
+  link "Download the file" => "Ladda ner filen";
+  /// DeskMailingLists · note
+  /// placeholders: {r.Email} = r.Email (string)
+  /// shown through note
+  note "{r.Email} is erased." => "{r.Email} är raderad.";
+  /// DeskMailingLists · text on the page
+  /// beside: "Erase", "Keep"
+  text "Erase everything about them?" => "Radera allt om dem?";
+  /// DeskMailingLists · text on the page
+  text "Nobody here yet." => "Ingen här ännu.";
+  /// DeskMailingLists · text on the page
+  text "reader" => "läsare";
+  /// DeskMailingLists · text on the page
+  text "readers" => "läsare";
+  /// DeskMailingLists · text on the page
+  /// placeholders: {l.Readers} = l.Readers (int), {value} = … (string), {l.Waiting} = l.Waiting (int) — {l.Readers} is a count: give one text per plural form
+  text "{l.Readers} {value} · {l.Waiting} waiting to confirm" => "{l.Readers} {value} · {l.Waiting} väntar på att bekräfta";
+  /// DeskMailingLists · text on the page
+  /// placeholders: {r.State} = r.State (string), {r.Since} = r.Since (string), {value} = … (string), {value2} = … (string)
+  text "{r.State} · since {r.Since}{value}{value2}" => "{r.State} · sedan {r.Since}{value}{value2}";
+
+  // ── LeaveWithLink ──
+  /// LeaveWithLink · text on the page
+  /// shown through LeaveWithLink()
+  /// also in JoinWithLink
+  text "That link no longer works." => "Den länken fungerar inte längre.";
+
+  // ── ListChoiceRow ──
+  /// ListChoiceRow · text on the page
+  text "Mail to this address has stopped: it bounced, or a mail was marked as spam." => "Utskicken till den här adressen har stoppats: mejlen studsade, eller så markerades ett mejl som skräppost.";
+  /// ListChoiceRow · text on the page
+  text "Waiting for you to confirm from your inbox." => "Väntar på att du bekräftar från din inkorg.";
+
+  // ── ListChoices ──
+  /// ListChoices · a control's name for screen readers
+  accessibleName "Mail from us" => "Utskick från oss";
+  /// ListChoices · note
+  /// placeholders: {email} = email (string)
+  /// shown through note
+  note "We have sent a mail to {email}: press the button in it to confirm." => "Vi har skickat ett mejl till {email}: tryck på knappen i det för att bekräfta.";
+
+  // ── ListConfirm ──
+  /// ListConfirm · a control's name for screen readers
+  accessibleName "Confirmation" => "Bekräftelse";
+  /// ListConfirm · a heading
+  /// shown through ListConfirm.heading
+  heading "You are on the list" => "Du står på listan";
+  /// ListConfirm · text on the page
+  text "Confirming…" => "Bekräftar…";
+  /// ListConfirm · text on the page
+  /// shown through ListConfirm.body
+  text "Thank you for confirming. The next letter comes to your inbox." => "Tack för att du bekräftade. Nästa brev kommer till din inkorg.";
+  /// ListConfirm · text on the page
+  text "That did not work" => "Det fungerade inte";
+
+  // ── ListConfirmationMail ──
+  /// ListConfirmationMail · a button's label · at most ~33 characters
+  /// shown through EmailButton.label
+  /// beside: "Please confirm your address", "The link works for seven days. If you did not ask, ignore this mail — you will not hear from us again."
+  button "Confirm my subscription" => "Bekräfta min prenumeration";
+  /// ListConfirmationMail · the preview line an inbox shows beside an email's subject
+  /// shown through EmailLayout.preview
+  mailPreview "One click and you are on the list." => "Ett klick så står du på listan.";
+  /// ListConfirmationMail · an email's subject line
+  /// placeholders: {list.Name} = list.Name (string)
+  mailSubject "Confirm your subscription to {list.Name}" => "Bekräfta din prenumeration på {list.Name}";
+  /// ListConfirmationMail · text on the page
+  /// shown through EmailHeading.text
+  /// beside: "Confirm my subscription", "The link works for seven days. If you did not ask, ignore this mail — you will not hear from us again."
+  text "Please confirm your address" => "Bekräfta din adress";
+  /// ListConfirmationMail · text on the page
+  /// shown through EmailNote.text
+  /// beside: "Please confirm your address", "Confirm my subscription"
+  text "The link works for seven days. If you did not ask, ignore this mail — you will not hear from us again." => "Länken fungerar i sju dagar. Om det inte var du som bad om det kan du strunta i det här mejlet, du hör inte av oss igen.";
+  /// ListConfirmationMail · text on the page
+  /// placeholders: {list.Name} = list.Name (string), {reader.Email} = reader.Email (string)
+  /// shown through EmailText.text
+  /// beside: "Please confirm your address", "Confirm my subscription", "The link works for seven days. If you did not ask, ignore this mail — you will not hear from us again."
+  text "You asked to receive {list.Name} at {reader.Email}. Confirm it is you, and it is on its way." => "Du bad om att få {list.Name} till {reader.Email}. Bekräfta att det är du, så är den på väg.";
+
+  // ── ListFor ──
+  /// ListFor · an error message
+  /// placeholders: {key} = key (string)
+  /// shown through Exception
+  error "There is no mailing list '{key}' — declare it in app.MailingLists." => "Det finns ingen e-postlista '{key}'. Deklarera den i app.MailingLists.";
+
+  // ── ListPreferences ──
+  /// ListPreferences · a control's name for screen readers
+  accessibleName "Your mail from us" => "Dina utskick från oss";
+  /// ListPreferences · a button's label · at most ~38 characters
+  /// shown through Button.label
+  button "Unsubscribe from everything" => "Avsluta alla prenumerationer";
+  /// ListPreferences · a heading
+  /// shown through ListPreferences.heading
+  heading "Your mail from us" => "Dina utskick från oss";
+  /// ListPreferences · note
+  /// shown through note
+  note "Done. You will not get mail from any of our lists." => "Klart. Du får inga fler utskick från någon av våra listor.";
+  /// ListPreferences · note
+  /// placeholders: {c.Name} = c.Name (string)
+  /// shown through note
+  note "You are on {c.Name}." => "Du prenumererar på {c.Name}.";
+  /// ListPreferences · note
+  /// placeholders: {c.Name} = c.Name (string)
+  /// shown through note
+  note "You will no longer get {c.Name}." => "Du får inte längre {c.Name}.";
+  /// ListPreferences · text on the page
+  /// placeholders: {address} = address (string)
+  text "For {address}. Switch any of them on or off." => "För {address}. Slå på eller av vilka du vill.";
+
+  // ── ListSignupForm ──
+  /// ListSignupForm · a control's name for screen readers
+  accessibleName "Sign up" => "Anmälan";
+  /// ListSignupForm · a button's label · at most ~13 characters
+  /// shown through ListSignupForm.button
+  button "Sign up" => "Anmäl mig";
+  /// ListSignupForm · a label (a field, a list item, a menu entry) · at most ~11 characters
+  /// shown through Field.label
+  label "Email" => "E-post";
+  /// ListSignupForm · placeholder text inside an empty field · at most ~26 characters
+  /// shown through ListSignupForm.placeholder
+  placeholder "Your email address" => "Din e-postadress";
+  /// ListSignupForm · text on the page
+  /// shown through ListSignupForm.done
+  text "Nearly there. We have sent you a mail: press the button in it to confirm." => "Snart klart. Vi har skickat ett mejl till dig: tryck på knappen i det för att bekräfta.";
+
+  // ── Osysharp.MailingLists.ConsentKind ──
+  /// Osysharp.MailingLists.ConsentKind · a label (a field, a list item, a menu entry) · at most ~19 characters
+  /// shown through Osysharp.MailingLists.ConsentKind.Given
+  /// beside: "Confirmed", "Left"
+  label "Asked to join" => "Bad om att gå med";
+  /// Osysharp.MailingLists.ConsentKind · a label (a field, a list item, a menu entry) · at most ~10 characters
+  /// shown through Osysharp.MailingLists.ConsentKind.Withdrawn
+  /// beside: "Asked to join", "Confirmed"
+  label "Left" => "Lämnade";
+
+  // ── Osysharp.MailingLists.ListCampaign.For ──
+  /// Osysharp.MailingLists.ListCampaign.For · an error message
+  /// shown through Exception
+  error "A ListCampaign renders For(reader, unsubscribe)." => "En ListCampaign renderar For(reader, unsubscribe).";
+
+  // ── Osysharp.MailingLists.ListCampaign.Key ──
+  /// Osysharp.MailingLists.ListCampaign.Key · an error message
+  /// shown through Exception
+  error "A ListCampaign names its Key()." => "En ListCampaign anger sin Key().";
+
+  // ── Osysharp.MailingLists.StopReason ──
+  /// Osysharp.MailingLists.StopReason · a label (a field, a list item, a menu entry) · at most ~13 characters
+  /// shown through Osysharp.MailingLists.StopReason.Bounced
+  /// beside: "Marked as spam", "Stopped by staff"
+  label "Bounced" => "Studsade";
+  /// Osysharp.MailingLists.StopReason · a label (a field, a list item, a menu entry) · at most ~20 characters
+  /// shown through Osysharp.MailingLists.StopReason.Complained
+  /// beside: "Bounced", "Stopped by staff"
+  label "Marked as spam" => "Markerad som skräppost";
+  /// Osysharp.MailingLists.StopReason · a label (a field, a list item, a menu entry) · at most ~23 characters
+  /// shown through Osysharp.MailingLists.StopReason.Manual
+  /// beside: "Bounced", "Marked as spam"
+  label "Stopped by staff" => "Stoppad av personalen";
+
+  // ── Osysharp.MailingLists.SubscriberState ──
+  /// Osysharp.MailingLists.SubscriberState · a label (a field, a list item, a menu entry) · at most ~15 characters
+  /// shown through Osysharp.MailingLists.SubscriberState.Confirmed
+  /// beside: "Waiting to confirm", "Stopped", "Erased"
+  /// also in Osysharp.MailingLists.ConsentKind
+  label "Confirmed" => "Bekräftad";
+  /// Osysharp.MailingLists.SubscriberState · a label (a field, a list item, a menu entry) · at most ~12 characters
+  /// shown through Osysharp.MailingLists.SubscriberState.Erased
+  /// beside: "Waiting to confirm", "Confirmed", "Stopped"
+  label "Erased" => "Raderad";
+  /// Osysharp.MailingLists.SubscriberState · a label (a field, a list item, a menu entry) · at most ~13 characters
+  /// shown through Osysharp.MailingLists.SubscriberState.Suppressed
+  /// beside: "Waiting to confirm", "Confirmed", "Erased"
+  label "Stopped" => "Stoppad";
+  /// Osysharp.MailingLists.SubscriberState · a label (a field, a list item, a menu entry) · at most ~26 characters
+  /// shown through Osysharp.MailingLists.SubscriberState.Pending
+  /// beside: "Confirmed", "Stopped", "Erased"
+  label "Waiting to confirm" => "Väntar på bekräftelse";
+
+  // ── SendToList ──
+  /// SendToList · an error message
+  /// placeholders: {listKey} = listKey (string)
+  /// shown through Exception
+  error "There is no mailing list '{listKey}'." => "Det finns ingen e-postlista '{listKey}'.";
+
+  // ── SignUpToList ──
+  /// SignUpToList · an error message
+  /// shown through Exception
+  error "A sign-up records the words the reader agreed to — pass them." => "En anmälan sparar orden som läsaren godkände. Skicka med dem.";
+  /// SignUpToList · text on the page
+  /// shown through SignUpToList()
+  text "That does not look like an email address." => "Det ser inte ut som en e-postadress.";
+
+  // ── StopReader ──
+  /// StopReader · an error message
+  /// shown through Exception
+  error "Say why — it is kept with the reader." => "Ange varför. Det sparas med läsaren.";
+}

@@ -1,0 +1,110 @@
+// The links a list's mail carries, and the doors they open — with no sign-in.
+//
+// A link is a GRANT (D-GRANT1): the platform mints it for ONE reader's row, signs it with the app's own key, and checks
+// it before any function that takes one runs — its signature, that it is this app's and this grant's, that it has not
+// expired, and that it has not been taken back. There is no key for the app to keep: the platform holds it.
+//
+//   `ListReaderLink` — at the foot of every list mail: the reader sees which lists they are on, and changes them. It
+//                      reads that one reader and their memberships, and nothing else (the `security` blocks in
+//                      Lists.osy). Every CHANGE is still made by the reader's own workflow, found by the row's id.
+//   `ListConfirmation` — the double opt-in mail: it confirms the address it was sent to, for seven days.
+//
+// Erasing a reader takes back every link ever sent to them (`ListReaderLink.RevokeAll`, in `Forget`).
+//
+// SECURITY-INVARIANT(list-links-are-signed): every change a visitor makes without signing in — confirming an address,
+//   leaving a list, joining one from the preferences page, the one-click unsubscribe — takes a GRANT the platform
+//   verified before the function ran (a forged, expired, revoked or other-grant link never reaches the body), and the
+//   change is made by the reader's own workflow, never by a write aimed at a row. Failure modes: anybody unsubscribing
+//   (or subscribing) anybody by guessing ids, a confirmation link used to manage lists or the other way round, an old
+//   confirmation link confirming months later. Guarded by lists.test.osy
+//   a_link_signed_for_another_reader_or_another_purpose_does_nothing and
+//   a_confirmation_link_that_has_expired_confirms_nothing (the platform's side: RowGrantTests).
+
+namespace Osysharp.MailingLists;
+
+using Osysharp.Workflow;
+
+/// What a reader's mails let them do without signing in: see which lists they are on, and join or leave them — for a
+/// year from the mail. One reader; nothing else.
+public grant ListReaderLink for ListSubscriber { Expires = TimeSpan.FromDays(365); }
+
+/// The link that confirms an address — sent once, to that address, and good for seven days.
+public grant ListConfirmation for ListSubscriber { Expires = TimeSpan.FromDays(7); }
+
+/// `path` with `{link}` (and `{list}`, when it has one) filled, after the app's address.
+public string ListLink(string path, string link, string listKey = "") {
+  return App.BaseUrl.TrimEnd('/') + path.Replace("{link}", link).Replace("{list}", listKey);
+}
+
+/// The preferences page for `reader` — what a mail's "Manage your mail" links to.
+public string PreferencesLink(ListSubscriber reader) {
+  return ListLink(App.Setting<MailingListSetup>().PreferencesPath, $"{ListReaderLink.For(reader)}");
+}
+
+/// Where a mail client POSTs the one-click unsubscribe (RFC 8058) for a mail from `listKey` to `reader` — the address in
+/// the mail's `List-Unsubscribe` header.
+public string OneClickLink(ListSubscriber reader, string listKey) {
+  return ListLink(App.Setting<MailingListSetup>().OneClickPath, $"{ListReaderLink.For(reader)}", listKey);
+}
+
+// ── the doors ────────────────────────────────────────────────────────────────────────────────────────────────
+
+/// Somebody asks to join `listKey` from a form — their address, where (`source`: "footer", "checkout"…), and the
+/// exact words beside the box they ticked or the button they pressed. Answers "" once it is taken, or the sentence to
+/// show. The same answer whether the address is new, waiting or already on the list — a stranger learns nothing.
+[AllowAnonymous]
+public string SignUpToList(string email, string listKey, string source, string words, string name = "") {
+  var address = ListAddress(email);
+  if (!address.Contains("@") || address.Length < 5 || address.Contains(" ")) { return "That does not look like an email address."; }
+  if (ListDeclared(listKey) == null) { return $"There is no list '{listKey}'."; }
+  if (words.Trim() == "") { throw new Exception("A sign-up records the words the reader agreed to — pass them."); }
+  new ListSignup { Email = address, Name = name.Trim() == "" ? null : name.Trim(), ListKey = listKey, Language = Session.Language,
+                   Source = source == "" ? "form" : source, Words = words, At = DateTime.UtcNow };
+  UnitOfWork.Commit();
+  return "";
+}
+
+/// The confirm link: confirms the address it was sent to. Answers "" when it did, or the sentence to show. A link that
+/// is not one — forged, expired, another kind — never gets here: the platform refuses it first.
+[AllowAnonymous]
+public string ConfirmSubscription(ListConfirmation link) {
+  var outcome = SubscriberLifecycle.CorrelateConfirm(link.Row.Id);
+  if (outcome == CorrelationOutcome.Deposited) { return ""; }
+  return "That address can no longer be confirmed.";
+}
+
+/// Where the reader a link names stands with every list — the ones offered to anyone, and any they are on.
+[AllowAnonymous]
+public List<ListChoice> ReaderChoices(ListReaderLink link) {
+  return ChoicesOf(link.Row, true);
+}
+
+/// The address a reader link names — for the preferences page's heading.
+[AllowAnonymous]
+public string ReaderAddress(ListReaderLink link) {
+  return link.Row.State == SubscriberState.Erased ? "" : link.Row.Email;
+}
+
+/// A reader link: leave `listKey` — "" for every list. Answers "" when done.
+[AllowAnonymous]
+public string LeaveWithLink(ListReaderLink link, string listKey) {
+  var outcome = SubscriberLifecycle.CorrelateLeave(link.Row.Id, listKey, "preferences page");
+  return outcome == CorrelationOutcome.Deposited || outcome == CorrelationOutcome.NotRunning ? "" : "That link no longer works.";
+}
+
+/// A reader link: join `listKey` from the preferences page, with the words beside the switch. Answers "" when done.
+[AllowAnonymous]
+public string JoinWithLink(ListReaderLink link, string listKey, string words) {
+  if (ListDeclared(listKey) == null) { return $"There is no list '{listKey}'."; }
+  var outcome = SubscriberLifecycle.CorrelateJoin(link.Row.Id, listKey, "preferences page", words);
+  return outcome == CorrelationOutcome.Deposited ? "" : "That link no longer works.";
+}
+
+/// The one-click unsubscribe (RFC 8058): a mail client POSTs `List-Unsubscribe=One-Click` to the address in the mail's
+/// `List-Unsubscribe` header, and the reader leaves the list the mail was sent to. The app routes that POST here — see
+/// the README. Answers "ok"; a link that does not verify is refused by the platform before this runs.
+[AllowAnonymous]
+public string OneClickUnsubscribe(ListReaderLink link, string list) {
+  SubscriberLifecycle.CorrelateLeave(link.Row.Id, list, "one-click unsubscribe");
+  return "ok";
+}

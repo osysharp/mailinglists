@@ -1,0 +1,311 @@
+// Mailing lists through a small app: a visitor signs up and must confirm from their mailbox; a reader's link — a grant
+// the platform signed, and only that — shows where they stand and lets them leave; a send reaches each confirmed reader
+// once; the mail provider's word stops an address; staff export and erase.
+
+using Osysharp.MailingLists;
+using Osysharp.Workflow;
+using Osysharp.Csv;
+
+[TestFixture]
+void People() {
+  var anna = new Member { Email = "anna@shop.test", PasswordHash = Security.HashPassword("desk-pass-1") };
+  new RoleGrant { Member = anna, Role = AppRole.Staff };
+  var olle = new Member { Email = "olle@example.test", PasswordHash = Security.HashPassword("olle-pass-1") };
+  new RoleGrant { Member = olle, Role = AppRole.Member };
+}
+
+principal Desk => Member.Single(m => m.Email == "anna@shop.test");
+principal Olle => Member.Single(m => m.Email == "olle@example.test");
+
+const string Words = "Yes — send me the monthly letter. I can leave at any time.";
+
+/// A mail in the outbox, as staff read it.
+class Seen {
+  public string Subject = "";
+  public string Text = "";
+  public string? ListUnsubscribe;
+}
+
+/// The mails in the outbox to `to` — as staff read them — in the order they were written.
+[SuppressWarning("cost-unbounded-read")]   // a test helper: the few mails one address was sent in this test
+List<Seen> MailsTo(string to) {
+  List<Seen> found = [];
+  runas (Desk) {
+    foreach (var o in Outbox.Where(o => o.To == to).OrderBy(o => o.WrittenAt).ToList()) {
+      found.Add(new Seen { Subject = o.Subject, Text = o.Text, ListUnsubscribe = o.ListUnsubscribe });
+    }
+  }
+  return found;
+}
+
+/// The token in the link after `path` in a mail's text.
+string LinkToken(string text, string path) {
+  var at = text.IndexOf(path);
+  Assert.True(at >= 0, $"the mail carries no {path} link: {text}");
+  var rest = text.Substring(at + path.Length);
+  var end = 0;
+  while (end < rest.Length && rest[end] != ' ' && rest[end] != '\n' && rest[end] != ')' && rest[end] != '>' && rest[end] != ']') { end = end + 1; }
+  return rest.Substring(0, end);
+}
+
+/// A link to `email`'s preferences, as a mail to them carries it — minted by staff, who can read the reader.
+string ReaderLinkOf(string email) {
+  var link = "";
+  runas (Desk) { link = $"{ListReaderLink.For(ListSubscriber.Single(s => s.Email == email))}"; }
+  return link;
+}
+
+/// The list keys `link`'s reader is on, as their preferences page shows them.
+string OnLists(string link) {
+  return string.Join(",", ReaderChoices(ListReaderLink.From(link)).Where(c => c.On).Select(c => c.Key).ToList());
+}
+
+/// A reader's id, as staff see it.
+Guid ReaderId(string email) {
+  var id = Guid.Empty;
+  runas (Desk) { id = ListSubscriber.Single(s => s.Email == email).Id; }
+  return id;
+}
+
+SubscriberState StateOf(string email) {
+  var state = SubscriberState.Erased;
+  runas (Desk) { state = ListSubscriber.Single(s => s.Email == email).State; }
+  return state;
+}
+
+/// Signs `email` up to the letter and confirms it from the mail, as its owner would.
+void Confirmed(string email) {
+  Assert.Equal("", SignUpToList(email, "letter", "footer", Words));
+  Assert.Equal("", ConfirmSubscription(ListConfirmation.From(LinkToken(MailsTo(email).Last().Text, "/newsletter/confirm/"))));
+}
+
+[Test(People)]
+void a_signup_waits_for_its_owner_to_confirm_it_from_the_mailbox() {
+  Assert.Equal("", SignUpToList("  Maja@Example.TEST ", "letter", "footer", Words, "Maja"));   // a visitor, signed out
+  Assert.Equal(SubscriberState.Pending, StateOf("maja@example.test"));
+  runas (Desk) { Assert.Equal(0, ReadersOf("letter").Count); }                  // nothing goes to it yet
+
+  var mails = MailsTo("maja@example.test");
+  Assert.Equal(1, mails.Count);
+  Assert.Equal("Confirm your subscription to the monthly letter", mails[0].Subject);
+  Assert.Null(mails[0].ListUnsubscribe);                                        // a confirmation is not list mail
+
+  Assert.Equal("", ConfirmSubscription(ListConfirmation.From(LinkToken(mails[0].Text, "/newsletter/confirm/"))));
+  runas (Desk) {
+    var confirmed = ListSubscriber.Single(s => s.Email == "maja@example.test");
+    Assert.Equal(SubscriberState.Confirmed, confirmed.State);
+    Assert.NotNull(confirmed.ConfirmedAt);
+    Assert.Equal(1, ReadersOf("letter").Count);
+    // The consent, word for word, where it was given — and the confirmation that proves the mailbox is theirs.
+    var given = ListConsent.Single(c => c.Subscriber == confirmed && c.Kind == ConsentKind.Given);
+    Assert.Equal(Words, given.Words);
+    Assert.Equal("footer", given.Source);
+    Assert.Equal("letter", given.List!.Key);
+    Assert.Equal(1, ListConsent.Count(c => c.Subscriber == confirmed && c.Kind == ConsentKind.Confirmed));
+  }
+}
+
+[Test(People)]
+void signing_up_again_answers_the_same_and_does_not_flood_the_mailbox() {
+  Confirmed("maja@example.test");
+  // Already on the list — a stranger typing her address is told exactly what they would be told for a new one.
+  Assert.Equal("", SignUpToList("maja@example.test", "letter", "footer", Words));
+  Assert.Equal(1, MailsTo("maja@example.test").Count);                          // no second mail to a confirmed reader
+
+  Assert.Equal("", SignUpToList("ines@example.test", "letter", "footer", Words));
+  Assert.Equal("", SignUpToList("ines@example.test", "letter", "footer", Words));
+  Assert.Equal("", SignUpToList("ines@example.test", "offers", "footer", "Yes — offers too."));
+  Assert.Equal(1, MailsTo("ines@example.test").Count);                          // one confirmation an hour, at most
+  Assert.Contains("That does not look like an email address", SignUpToList("not an address", "letter", "footer", Words));
+}
+
+[Test(People)]
+void a_visitor_and_a_member_read_nothing_of_the_list() {
+  Confirmed("maja@example.test");
+  Assert.Equal(0, ListSubscriber.Count());                                      // signed out
+  Assert.Equal(0, ReadersOf("letter").Count);
+  var empty = ReadCsv(ExportReaders(""));
+  Assert.Equal("email", empty.Header[0]);
+  Assert.Equal(0, empty.Rows.Count);
+  runas (Olle) {
+    Assert.Equal(0, ListSubscriber.Count());                                    // a member who is not staff
+    Assert.Equal(0, ListConsent.Count());
+    Assert.Equal(0, ListReaders("").Count);
+  }
+}
+
+[Test(People)]
+void a_readers_link_shows_where_they_stand_and_nothing_of_anyone_else() {
+  Confirmed("maja@example.test");
+  Confirmed("ines@example.test");
+  Assert.Equal("", SignUpToList("maja@example.test", "offers", "footer", "Yes — offers too."));   // on both, now
+  var majaLink = ReaderLinkOf("maja@example.test");
+
+  Assert.Equal("letter,offers", OnLists(majaLink));
+  Assert.Equal("maja@example.test", ReaderAddress(ListReaderLink.From(majaLink)));
+  // …and ONLY hers: the link reads one row. The same call as a visitor with no link reads nobody.
+  Assert.Equal(1, ReadersSeenThrough(ListReaderLink.From(majaLink)));
+  Assert.Equal(0, ListSubscriber.Count());
+}
+
+/// How many readers a function holding `link` can see — the grant admits one row, whatever the query.
+[AllowAnonymous] int ReadersSeenThrough(ListReaderLink link) { return ListSubscriber.Count(); }
+
+[Test(People)]
+void a_link_signed_for_another_reader_or_another_purpose_does_nothing() {
+  Confirmed("maja@example.test");
+  Confirmed("ines@example.test");
+  var majaLink = ReaderLinkOf("maja@example.test");
+
+  // A link that was tampered with, a made-up one, and a reader link in the confirmation's place or the other way round
+  // are all refused by the platform before any of it reaches the kit.
+  var tampered = majaLink.Substring(0, majaLink.Length - 4) + (majaLink.EndsWith("AAAA") ? "BBBB" : "AAAA");
+  Assert.Throws<NotAuthorized>(() => ListReaderLink.From(tampered));
+  Assert.Throws<NotAuthorized>(() => ListReaderLink.From("g1.not-a-link"));
+  Assert.Throws<NotAuthorized>(() => ListConfirmation.From(majaLink));
+  runas (Desk) { Assert.Equal(2, ReadersOf("letter").Count); }                  // nobody left
+
+  // Her own link does what it says — for her.
+  Assert.Equal("", LeaveWithLink(ListReaderLink.From(majaLink), "letter"));
+  runas (Desk) {
+    var left = ReadersOf("letter");
+    Assert.Equal(1, left.Count);
+    Assert.Equal("ines@example.test", left[0].Email);
+  }
+}
+
+[Test(People)]
+void a_confirmation_link_that_has_expired_confirms_nothing() {
+  Assert.Equal("", SignUpToList("maja@example.test", "letter", "footer", Words));
+  var link = LinkToken(MailsTo("maja@example.test").Last().Text, "/newsletter/confirm/");
+  TestClock.Advance(TimeSpan.FromDays(8));                                        // it works for seven
+  Assert.Throws<NotAuthorized>(() => ListConfirmation.From(link));
+  Assert.Equal(SubscriberState.Pending, StateOf("maja@example.test"));
+}
+
+[Test(People)]
+void erasing_a_reader_takes_back_every_link_ever_sent_to_them() {
+  Confirmed("maja@example.test");
+  var link = ReaderLinkOf("maja@example.test");
+  Assert.Equal("letter", OnLists(link));
+  runas (Desk) { Assert.True(EraseReader("maja@example.test")); }
+  Assert.Throws<NotAuthorized>(() => ListReaderLink.From(link));
+}
+
+[Test(People)]
+void leaving_from_a_mail_is_recorded_and_the_reader_can_come_back() {
+  Confirmed("maja@example.test");
+  var link = ReaderLinkOf("maja@example.test");
+  Assert.Equal("", JoinWithLink(ListReaderLink.From(link), "offers", "Yes — offers too."));
+  Assert.Equal("ok", OneClickUnsubscribe(ListReaderLink.From(link), "letter"));   // the mail client's POST
+  runas (Desk) {
+    Assert.Equal(0, ReadersOf("letter").Count);
+    Assert.Equal(1, ReadersOf("offers").Count);                                 // only the list the mail came from
+    var left = ListConsent.Single(c => c.Subscriber.Email == "maja@example.test" && c.Kind == ConsentKind.Withdrawn);
+    Assert.Equal("one-click unsubscribe", left.Source);
+    Assert.Equal("letter", left.List!.Key);
+  }
+  Assert.Equal("offers", OnLists(link));
+  Assert.Equal("", LeaveWithLink(ListReaderLink.From(link), ""));              // "leave everything"
+  runas (Desk) { Assert.Equal(0, ReadersOf("offers").Count); }
+  Assert.Equal("", JoinWithLink(ListReaderLink.From(link), "letter", Words));
+  runas (Desk) { Assert.Equal(1, ReadersOf("letter").Count); }
+}
+
+[Test(People)]
+void a_send_reaches_each_confirmed_reader_once_with_their_own_way_out() {
+  Confirmed("maja@example.test");
+  Confirmed("ines@example.test");
+  Assert.Equal("", SignUpToList("waiting@example.test", "letter", "footer", Words));   // never confirms
+  Assert.True(StopAddress("ines@example.test", false, "mailbox full"));
+
+  runas (Desk) {
+    var letter = new Letter { Subject = "September at the shop", Body = "New beans from Huila." };
+    UnitOfWork.Commit();
+    var first = SendLetter(letter, "letter");
+    Assert.Equal(1, first.Sent);
+    Assert.Equal(2, first.Skipped);                                             // waiting, and bounced
+    var again = SendLetter(letter, "letter");                                   // pressed twice
+    Assert.Equal(0, again.Sent);
+    Assert.Equal(1, again.AlreadySent);
+  }
+  var sent = MailsTo("maja@example.test").Where(m => m.Subject == "September at the shop").ToList();
+  Assert.Equal(1, sent.Count);
+  // The header a mail client offers "Unsubscribe" from, and the footer's link — one link, hers, for this list.
+  var footer = LinkToken(sent[0].Text, "/newsletter/");
+  Assert.Equal($"{App.BaseUrl.TrimEnd('/')}/lists/leave/letter/{footer}", sent[0].ListUnsubscribe);
+  Assert.Equal("maja@example.test", ReaderAddress(ListReaderLink.From(footer)));
+  Assert.Equal(0, MailsTo("ines@example.test").Count(m => m.Subject == "September at the shop"));
+}
+
+[Test(People)]
+void a_bounce_or_a_complaint_stops_mail_until_the_owner_confirms_again() {
+  Confirmed("maja@example.test");
+  Assert.True(StopAddress("MAJA@example.test", true, "marked as spam"));
+  Assert.False(StopAddress("nobody@example.test", false, "no such mailbox"));   // not on a list: nothing to stop
+  runas (Desk) {
+    var maja = ListSubscriber.Single(s => s.Email == "maja@example.test");
+    Assert.Equal(SubscriberState.Suppressed, maja.State);
+    Assert.Equal(StopReason.Complained, maja.StoppedBecause);
+    Assert.Equal(0, ReadersOf("letter").Count);
+  }
+  // She signs up again, and confirms from her mailbox: that is her saying it takes mail.
+  Assert.Equal("", SignUpToList("maja@example.test", "letter", "footer", Words));
+  Assert.Equal("", ConfirmSubscription(ListConfirmation.From(LinkToken(MailsTo("maja@example.test").Last().Text, "/newsletter/confirm/"))));
+  runas (Desk) {
+    Assert.Equal(1, ReadersOf("letter").Count);
+    Assert.Null(ListSubscriber.Single(s => s.Email == "maja@example.test").StoppedBecause);
+  }
+}
+
+[Test(People)]
+void staff_export_the_list_with_its_consent_and_erase_a_reader() {
+  Confirmed("maja@example.test");
+  Assert.Equal("", SignUpToList("=cmd@example.test", "letter", "footer", "Sure \"quoted\""));
+  runas (Desk) {
+    var csv = ExportReaders("letter");
+    Assert.Contains("'=cmd@example.test", csv);                                  // a spreadsheet does not run it
+    var t = ReadCsv(csv);
+    var maja = t.Rows.Single(r => t.Get(r, "email") == "maja@example.test");
+    Assert.Equal("Confirmed", t.Get(maja, "state"));
+    Assert.Equal("letter", t.Get(maja, "lists"));
+    Assert.Equal("footer", t.Get(maja, "consent_source"));
+    Assert.Equal(Words, t.Get(maja, "consent_words"));
+    var cmd = t.Rows.Single(r => t.Get(r, "email") == "=cmd@example.test");   // and it reads back as it was
+    Assert.Equal("Sure \"quoted\"", t.Get(cmd, "consent_words"));
+    Assert.Contains("confirmed the address", ReaderRecord("maja@example.test"));
+
+    Assert.True(EraseReader("maja@example.test"));
+    Assert.False(ListSubscriber.Any(s => s.Email == "maja@example.test"));
+    Assert.Equal(0, ListConsent.Count(c => c.Subscriber.State == SubscriberState.Erased));
+    Assert.Equal(0, ReadersOf("letter").Count);
+    Assert.DoesNotContain("maja", ExportReaders(""));
+  }
+}
+
+[Test(People)]
+void a_member_who_cannot_see_the_list_cannot_stop_or_erase_anyone() {
+  Confirmed("maja@example.test");
+  runas (Olle) {
+    Assert.False(EraseReader("maja@example.test"));
+    Assert.Equal("", ChooseList("maja@example.test", "letter", false, "account", ""));
+  }
+  runas (Desk) { Assert.Equal(1, ReadersOf("letter").Count); }
+}
+
+/// ⭐ A READER IS WRITTEN TO IN THE LANGUAGE THEY SIGNED UP IN (D-I18N1). The confirmation is sent by the lists' own
+/// workflow, where nobody's request is Swedish — so it is the language the form was read in, kept on the reader, that
+/// says it: a sign-up read in Swedish is confirmed in Swedish, one read in English in English.
+[Test(People)]
+void the_confirmation_is_in_the_language_the_reader_signed_up_in() {
+  Session.SetLanguage("sv");
+  Assert.Equal("", SignUpToList("sara@example.test", "letter", "footer", Words, "Sara"));
+  Session.SetLanguage("en");
+  Assert.Equal("", SignUpToList("sam@example.test", "letter", "footer", Words, "Sam"));
+
+  var swedish = MailsTo("sara@example.test").Single();
+  Assert.Equal("Bekräfta din prenumeration på the monthly letter", swedish.Subject);
+  Assert.Contains("Länken fungerar i sju dagar.", swedish.Text);
+  Assert.Equal("Confirm your subscription to the monthly letter", MailsTo("sam@example.test").Single().Subject);
+  runas (Desk) { Assert.Equal("sv", ListSubscriber.Single(s => s.Email == "sara@example.test").Language); }
+}

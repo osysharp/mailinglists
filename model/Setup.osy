@@ -1,0 +1,100 @@
+// What an app tells its mailing lists, once, in `app.MailingLists`:
+//
+//     app.MailingLists = new MailingListSetup {
+//       Lists = [ new ListInfo { Key = "letter", Name = "The monthly letter", Description = "New arrivals, once a month." } ],
+//       Brand = "Acme", Address = "1 Main St, Springfield",
+//       Mailer = new AcmeListMailer(),                  // hands each mail to the app's outbox
+//     };
+//
+// ⚑ THE LISTS ARE DECLARED IN SOURCE. A list is a promise to its readers — its name and what it sends are the words
+//   they agreed to — so it is written where it is reviewed, not typed into a desk. Its row is made the first time
+//   somebody joins it.
+//
+// ⚑ NO KEY TO KEEP. Every link a mail carries is a platform GRANT (Links.osy): signed with the app's own key, which the
+//   platform holds, and checked by the platform before the page or function that takes it runs.
+//
+// ⚑ THE APP SENDS THE MAIL. `Mailer` is the app's own outbox; the kit hands it one mail per reader, with the headers a
+//   mail client needs to offer "Unsubscribe" beside the sender (RFC 2369 / RFC 8058), and a key that makes a retried
+//   hand-over the same mail.
+
+namespace Osysharp.MailingLists;
+
+/// One list, as the app declares it.
+public class ListInfo {
+  /// Its key in links and code — letters, digits and hyphens: "letter", "offers".
+  public string Key = "";
+  /// Its name, as a reader sees it: "The monthly letter".
+  public string Name = "";
+  /// What it sends and how often — shown where people sign up, and on the preferences page.
+  public string Description = "";
+  /// Offered on the preferences page to a reader who is not on it. A list you only ever add people to from code (a
+  /// customers' list) is not.
+  public bool Offered = true;
+}
+
+/// One mail a list hands the app to send.
+public class ListMailOut {
+  public string To = "";
+  public RenderedEmail Mail;
+  /// The page that stops it — the `List-Unsubscribe` header's address, and the one-click POST (RFC 8058) goes to the
+  /// same place. "" for a mail a reader cannot stop (the confirmation they asked for).
+  public string Unsubscribe = "";
+  /// The same mail handed over twice has the same key — an outbox that sees it again sends it once.
+  public string Key = "";
+}
+
+/// Where a list's mail goes out. The app derives from it and hands each mail to its own outbox:
+///
+///     public class AcmeListMailer : ListMailer {
+///       public override void Send(ListMailOut m) { new Outbox { To = m.To, Subject = m.Mail.Subject, … }; }
+///     }
+public class ListMailer {
+  public virtual void Send(ListMailOut mail) {
+    throw new Exception("This app's mailing lists have no mailer: derive from ListMailer, hand each mail to your outbox, and name it in app.MailingLists (`Mailer = new MyListMailer()`).");
+  }
+}
+
+/// The mail a list sends of its own — the confirmation — one method per kind, so an app can send it in its own frame.
+public class ListMails {
+  /// Asks the reader to confirm their address: the list they joined and the button that confirms it.
+  public virtual RenderedEmail Confirmation(ListSubscriber subscriber, MailingList list, string confirmUrl) {
+    return ListConfirmationMail(subscriber, list, confirmUrl);
+  }
+}
+
+[AppSetting("MailingLists")]
+public class MailingListSetup {
+  public List<ListInfo> Lists = [];
+  /// The sender, as a reader knows it — in the default confirmation mail's frame.
+  public string Brand = "";
+  /// Where the sender is. A marketing mail must say so.
+  public string Address = "";
+  /// Where the app's pages are, after `App.BaseUrl`. `{link}` stands for the grant the link carries — the page's route
+  /// parameter of that name takes it (`[Page("/newsletter/{link}")] component P(ListReaderLink link)`).
+  public string ConfirmPath = "/newsletter/confirm/{link}";
+  public string PreferencesPath = "/newsletter/{link}";
+  /// Where a mail client POSTs the one-click unsubscribe (RFC 8058) — an API route the app declares for
+  /// `OneClickUnsubscribe` (README). It goes in every list mail's `List-Unsubscribe` header; `{list}` is the list the
+  /// mail was sent to.
+  public string OneClickPath = "/lists/leave/{list}/{link}";
+  public ListMailer Mailer = new ListMailer();
+  public ListMails Mails = new ListMails();
+}
+
+/// The list the app declares under `key`, or null.
+public ListInfo? ListDeclared(string key) {
+  foreach (var l in App.Setting<MailingListSetup>().Lists) {
+    if (l.Key == key) { return new ListInfo { Key = l.Key, Name = l.Name, Description = l.Description, Offered = l.Offered }; }
+  }
+  return null;
+}
+
+/// Every list the app declares.
+[AllowAnonymous]
+public List<ListInfo> DeclaredLists() {
+  List<ListInfo> lists = [];
+  foreach (var l in App.Setting<MailingListSetup>().Lists) {
+    lists.Add(new ListInfo { Key = l.Key, Name = l.Name, Description = l.Description, Offered = l.Offered });
+  }
+  return lists;
+}

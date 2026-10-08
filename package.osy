@@ -1,0 +1,19 @@
+// Osysharp.MailingLists — mailing lists any app can keep: people sign up by email (confirming it first), the consent
+// they gave is recorded word for word, every mail carries a signed link that stops it (and the one-click header mail
+// clients show), addresses that bounce or complain are never mailed again, and staff export or erase a subscriber.
+//
+// ⚑ IT KEEPS THE LIST; THE APP SENDS THE MAIL. A campaign goes out one mail per reader through the app's own outbox (a
+//   `ListMailer` the app names in `app.MailingLists`), so a mail provider that is down retries there and a list never
+//   holds a second copy of the app's mail.
+package Osysharp.MailingLists {
+  version     "0.2.0";
+  minPlatform "0.9.0";
+  summary     "mailing lists — double opt-in, consent recorded word for word, signed unsubscribe and preferences, suppression of bounces and complaints, export and erasure.";
+  model "model/**/*.osy";
+  use Osysharp.EmailTemplates@0;
+  use Osysharp.Ui;
+  use Osysharp.Workflow;
+  use Osysharp.Storage;
+  use Osysharp.Csv@0;
+  tests "tests";
+}

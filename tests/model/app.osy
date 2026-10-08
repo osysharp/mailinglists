@@ -1,0 +1,71 @@
+// An app around the lists: members who sign in, staff who run the lists, and an outbox the lists hand their mail to.
+
+using Osysharp.MailingLists;
+
+[Role] public enum AppRole { Authenticator, Member, Staff }
+
+[Principal]
+public entity Member {
+  [Required, Unique, MaxLength(255)] string Email;
+  [MaxLength(200)] string PasswordHash;
+  security {
+    allow read when IsAuthenticated where Id == user.Id;
+    allow read when IsStaff;
+    allow read, create when IsAuthenticator;
+    deny read PasswordHash when !IsAuthenticator;
+  }
+}
+
+[RoleGrant] public entity RoleGrant {
+  [Required] Member Member;
+  [Required] AppRole Role;
+  security { allow read when IsStaff; allow create when IsAuthenticator; }
+}
+
+policy IsStaff => RoleGrant.Any(g => g.Member == user && g.Role == AppRole.Staff);
+policy IsAuthenticator => RoleGrant.Any(g => g.Member == user && g.Role == AppRole.Authenticator);
+
+[AuthMethod]
+public string SignIn(string email, string password) {
+  var m = Member.Where(x => x.Email == email).FirstOrDefault();
+  if (m == null) { Security.VerifyPassword(password); return ""; }
+  return Security.VerifyPassword(password, m.PasswordHash) ? Security.IssueJwt(m.Id, m.Email) : "";
+}
+
+app.Auth = new PasswordAuth { LoginField = Email, PasswordField = PasswordHash };
+app.AuthBootstrap = new AuthBootstrap { Role = AppRole.Authenticator, Login = SignIn };
+
+// The lists are the kit's; it asks the app two things — who runs them, and which address is a signed-in reader's own.
+policy RunsMailingLists => IsStaff;
+policy OwnsListAddress(string email) => email == user.Email;
+// A member sees their own address — the row whose email is their account's — and staff see every one.
+
+/// The app's outbox: each mail waits here to be sent.
+public entity Outbox {
+  [Required, MaxLength(255)] string To;
+  [Required, MaxLength(200)] string Subject;
+  string Text;
+  string? Html;
+  [MaxLength(600)] string? ListUnsubscribe;
+  [Unique, MaxLength(200)] string? Key;
+  DateTime WrittenAt;
+  security { allow read, create when IsStaff; }
+}
+
+public class OutboxMailer : ListMailer {
+  public override void Send(ListMailOut m) {
+    if (Outbox.Any(o => o.Key == m.Key)) { return; }
+    new Outbox { To = m.To, Subject = m.Mail.Subject, Text = m.Mail.Text, Html = m.Mail.Html,
+                 ListUnsubscribe = m.Unsubscribe == "" ? null : m.Unsubscribe, Key = m.Key,
+                 WrittenAt = DateTime.UtcNow };
+  }
+}
+
+app.MailingLists = new MailingListSetup {
+  Lists = [
+    new ListInfo { Key = "letter", Name = "the monthly letter", Description = "What is new, once a month." },
+    new ListInfo { Key = "offers", Name = "offers now and then", Description = "Now and then, a price worth knowing." },
+  ],
+  Brand = "Kit Test Shop", Address = "1 Test Street, Testville",
+  Mailer = new OutboxMailer(),
+};

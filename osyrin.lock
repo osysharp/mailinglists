@@ -1,0 +1,54 @@
+{
+  "platform": {
+    "version": "0.9.0"
+  },
+  "entries": [
+    {
+      "name": "Osysharp.Csv",
+      "kind": "package",
+      "version": "0.1.0",
+      "hash": "sha256:1e9cdc7953a3c0b5e0380e844d3cc25c5b65f7145985e499054d7c852c472af5",
+      "minPlatform": "0.9.0",
+      "shadow": "app-forkable",
+      "source": "workspace:kits/csv",
+      "constraint": "0"
+    },
+    {
+      "name": "Osysharp.EmailTemplates",
+      "kind": "package",
+      "version": "0.1.1",
+      "hash": "sha256:3ef5eb08590a6772a073aad43e6bae51b31126fb7ea4ce45f09d64d83200527a",
+      "minPlatform": "0.9.0",
+      "shadow": "app-forkable",
+      "source": "workspace:kits/emailtemplates",
+      "constraint": "0"
+    },
+    {
+      "name": "Osysharp.Ui",
+      "kind": "package",
+      "version": "2.17.1",
+      "hash": "sha256:17d6d844ed71d4d614d43a6993723da70b2d39241c31e9f9fb58250a5183263c",
+      "minPlatform": "0.9.0",
+      "shadow": "app-forkable",
+      "source": "workspace:Platform.Core/Dsl/OsySharp/Baseline/Capabilities/Ui"
+    },
+    {
+      "name": "Osysharp.Storage",
+      "kind": "package",
+      "version": "1.2.0",
+      "hash": "sha256:0e45268f33acd5a0fe1dae3e886ab1d828824fc628f9a34efa81af746b0f57d0",
+      "minPlatform": "0.9.0",
+      "shadow": "app-forkable",
+      "source": "workspace:Platform.Core/Dsl/OsySharp/Baseline/Capabilities/Storage"
+    },
+    {
+      "name": "Osysharp.Workflow",
+      "kind": "package",
+      "version": "1.0.0",
+      "hash": "sha256:c9b5bb60a8be44efc0030d73b0bd60bdab05926344a68fb4db29dc78ee94c2f8",
+      "minPlatform": "0.9.0",
+      "shadow": "app-forkable",
+      "source": "workspace:Platform.Core/Dsl/OsySharp/Baseline/Capabilities/Workflow"
+    }
+  ]
+}

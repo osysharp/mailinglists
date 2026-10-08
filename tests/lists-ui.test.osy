@@ -1,0 +1,91 @@
+// The lists through the screen: a visitor signs up on the form and confirms from the mail; the link in a letter leaves
+// the list in one press; a member manages their own lists from their account; staff see, export and erase.
+
+using Osysharp.MailingLists;
+
+[Test(People)]
+void a_visitor_signs_up_on_the_form_and_confirms_from_the_mail() {
+  Ui.Visit("/");
+  Ui.Fill("Email", "maja@example.test");
+  Ui.Click("Sign up");
+  Assert.Visible("We have sent you a mail");
+  Assert.Equal(SubscriberState.Pending, StateOf("maja@example.test"));
+
+  Ui.Visit("/newsletter/confirm/" + LinkToken(MailsTo("maja@example.test").Last().Text, "/newsletter/confirm/"));
+  Assert.Visible("You are on the list");
+  Assert.Equal(SubscriberState.Confirmed, StateOf("maja@example.test"));
+  // The words beside the button are what was recorded.
+  runas (Desk) {
+    Assert.Equal("Yes — send me the monthly letter. I can leave at any time.",
+                 ListConsent.Single(c => c.Kind == ConsentKind.Given).Words);
+    Assert.Equal("home", ListConsent.Single(c => c.Kind == ConsentKind.Given).Source);
+  }
+}
+
+[Test(People)]
+void the_link_in_a_letter_shows_where_the_reader_stands_and_switches_lists() {
+  Confirmed("maja@example.test");
+  var link = ReaderLinkOf("maja@example.test");
+  Ui.Visit("/newsletter/" + link);
+  Assert.Visible("Your mail from us");
+  Assert.Visible("maja@example.test");
+  Assert.Checked("The monthly letter");                                   // where she stands — the page reads it
+  Assert.Checked("Offers now and then", false);
+  Ui.Click("The monthly letter");
+  Assert.Visible("You will no longer get the monthly letter.");
+  Assert.Checked("The monthly letter", false);
+  runas (Desk) { Assert.Equal(0, ReadersOf("letter").Count); }
+  Ui.Click("The monthly letter");
+  Assert.Checked("The monthly letter");
+  runas (Desk) { Assert.Equal(1, ReadersOf("letter").Count); }
+  Ui.Click("Offers now and then");
+  Assert.Checked("Offers now and then");
+  runas (Desk) { Assert.Equal(1, ReadersOf("offers").Count); }
+  Ui.Click("Unsubscribe from everything");
+  Assert.Visible("Done. You will not get mail from any of our lists.");
+  runas (Desk) { Assert.Equal(0, ReadersOf("letter").Count + ReadersOf("offers").Count); }
+}
+
+[Test(People)]
+void a_link_that_does_not_check_out_never_opens_the_page() {
+  Confirmed("maja@example.test");
+  var link = ReaderLinkOf("maja@example.test");
+  Ui.Visit("/newsletter/" + link.Substring(0, link.Length - 4) + (link.EndsWith("AAAA") ? "BBBB" : "AAAA"));
+  Assert.Visible("That link has run out");
+  Assert.Hidden("Your mail from us");
+}
+
+[Test(People)]
+void a_member_manages_their_own_lists_from_their_account() {
+  Confirmed("olle@example.test");
+  Ui.SignInAs(Olle);
+  Ui.Visit("/me");
+  Assert.Checked("The monthly letter");
+  Assert.Checked("Offers now and then", false);
+  Ui.Click("Offers now and then");
+  Assert.Checked("Offers now and then");
+  Ui.Click("The monthly letter");
+  Assert.Checked("The monthly letter", false);
+  runas (Desk) {
+    Assert.Equal(0, ReadersOf("letter").Count);
+    Assert.Equal(1, ReadersOf("offers").Count);
+    Assert.Equal("account", ListConsent.Single(c => c.Kind == ConsentKind.Withdrawn).Source);
+  }
+}
+
+[Test(People)]
+void staff_see_the_readers_export_them_and_erase_one() {
+  Confirmed("maja@example.test");
+  Assert.Equal("", SignUpToList("ines@example.test", "letter", "footer", Words));
+  Ui.SignInAs(Desk);
+  Ui.Visit("/lists");
+  Assert.Visible("1 reader · 1 waiting to confirm", within: "The monthly letter");
+  Assert.Visible("maja@example.test", within: "Readers");
+  Assert.Visible("Waiting to confirm", within: "ines@example.test");
+  Ui.Click("Export as CSV");
+  Assert.Visible("Download the file");
+  Ui.Click("Erase…", within: "maja@example.test");
+  Ui.Click("Erase", within: "maja@example.test");
+  Assert.Visible("maja@example.test is erased.");
+  Assert.Hidden("maja@example.test", within: "Readers");
+}

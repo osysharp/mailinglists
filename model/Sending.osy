@@ -1,0 +1,266 @@
+// Sending to a list, and what staff do with one: see who is on it, export it, stop or erase a reader.
+//
+// ⚑ EVERY FUNCTION HERE WORKS ON WHAT THE CALLER CAN READ. The kit grants staff nothing — the app does (README) — so a
+//   caller the app has not made staff finds an empty list, exports an empty file and sends to nobody.
+//
+// ⚑ A SEND IS ONE MAIL PER READER, AND AT MOST ONE. Each mail handed to the app's outbox leaves a `ListDelivery` row
+//   keyed on the campaign and the reader, so a send that is run again — after a timeout, a second press — mails only
+//   the readers it has not reached. Retrying a mail that did not go is the outbox's job.
+
+namespace Osysharp.MailingLists;
+
+using Osysharp.Workflow;
+using Osysharp.Storage;
+using Osysharp.Csv;
+
+/// One campaign handed to one reader. Unique per campaign and reader: what makes a send safe to run again.
+[Authority(Extensible)]
+[Unique(Campaign, Subscriber)]
+public entity ListDelivery {
+  /// What was sent — the app's key for its campaign ("campaign-{id}").
+  [Required, MaxLength(120)] string Campaign;
+  [Required] ListSubscriber Subscriber;
+  [Required] MailingList List;
+  DateTime At;
+  security {
+    deny create, update, delete when IsAnonymous;
+    allow read, create when RunsMailingLists;
+  }
+}
+
+/// A campaign, as a list sends it: the app derives from it and renders its mail for one reader.
+///
+///     public class LetterToList : ListCampaign {
+///       public Newsletter Letter;
+///       public override string Key() { return $"letter-{Letter.Id}"; }
+///       public override RenderedEmail For(ListSubscriber reader, string unsubscribe) {
+///         return LetterMail(Letter, reader.Name ?? "", unsubscribe);
+///       }
+///     }
+public class ListCampaign {
+  /// The same campaign always has the same key — a second send skips everyone the first reached.
+  public virtual string Key() { throw new Exception("A ListCampaign names its Key()."); }
+  /// Its mail for one reader, with the address that lets them leave (put it in the mail's footer).
+  public virtual RenderedEmail For(ListSubscriber reader, string unsubscribe) { throw new Exception("A ListCampaign renders For(reader, unsubscribe)."); }
+}
+
+/// What a send did.
+public class ListSendResult {
+  /// Handed to the outbox now.
+  public int Sent = 0;
+  /// Had it already, from an earlier run of this send.
+  public int AlreadySent = 0;
+  /// On the list but not mailed — not confirmed yet, or stopped.
+  public int Skipped = 0;
+}
+
+/// The readers `listKey` goes to now: on it, confirmed, not stopped.
+[SuppressWarning("cost-unbounded-read")]   // the readers a send to the list reaches — all of them, by definition
+public List<ListSubscriber> ReadersOf(string listKey) {
+  return ListMembership.Where(m => m.List.Key == listKey && m.Active && m.Subscriber.State == SubscriberState.Confirmed)
+    .Select(m => m.Subscriber).OrderBy(s => s.Email).ToList();
+}
+
+/// Sends `campaign` to everyone on `listKey` it has not reached yet — one mail each, through the app's outbox, each with
+/// its own link to leave and the one-click header. Safe to run again.
+[SuppressWarning("cost-unbounded-read")]   // a send reaches every reader on the list, and what this campaign already reached
+public ListSendResult SendToList(ListCampaign campaign, string listKey) {
+  if (ListDeclared(listKey) == null) { throw new Exception($"There is no mailing list '{listKey}'."); }
+  var setup = App.Setting<MailingListSetup>();
+  var key = campaign.Key();
+  var list = MailingList.FirstOrDefault(l => l.Key == listKey);
+  var result = new ListSendResult();
+  if (list == null) { return result; }
+  var done = ListDelivery.Where(d => d.Campaign == key).Select(d => d.Subscriber.Id).ToList();
+  foreach (var m in ListMembership.Where(x => x.List == list && x.Active).Include(x => x.Subscriber).ToList()) {
+    var reader = m.Subscriber;
+    if (reader.State != SubscriberState.Confirmed) { result.Skipped = result.Skipped + 1; continue; }
+    if (done.Contains(reader.Id)) { result.AlreadySent = result.AlreadySent + 1; continue; }
+    // ONE link per mail: it opens the preferences page, and it is what the one-click header carries.
+    var link = $"{ListReaderLink.For(reader)}";
+    setup.Mailer.Send(new ListMailOut {
+      To = reader.Email,
+      Mail = campaign.For(reader, ListLink(setup.PreferencesPath, link)),
+      Unsubscribe = ListLink(setup.OneClickPath, link, listKey),
+      Key = $"{key}-{reader.Id}",
+    });
+    new ListDelivery { Campaign = key, Subscriber = reader, List = list, At = DateTime.UtcNow };
+    result.Sent = result.Sent + 1;
+  }
+  UnitOfWork.Commit();
+  return result;
+}
+
+// ── the desk ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/// A list as the desk shows it.
+public class ListSummary {
+  public string Key = "";
+  public string Name = "";
+  public string Description = "";
+  /// Confirmed, not stopped — who a send reaches.
+  public int Readers = 0;
+  /// Signed up, not confirmed yet.
+  public int Waiting = 0;
+}
+
+/// Every declared list with how many it reaches.
+public List<ListSummary> ListSummaries() {
+  List<ListSummary> rows = [];
+  foreach (var l in App.Setting<MailingListSetup>().Lists) {
+    // Counted in the read — not every reader's state fetched to count here.
+    var key = l.Key;
+    rows.Add(new ListSummary { Key = l.Key, Name = l.Name, Description = l.Description,
+                               Readers = ListMembership.Count(m => m.List.Key == key && m.Active && m.Subscriber.State == SubscriberState.Confirmed),
+                               Waiting = ListMembership.Count(m => m.List.Key == key && m.Active && m.Subscriber.State == SubscriberState.Pending) });
+  }
+  return rows;
+}
+
+/// One reader as the desk lists them.
+public class ReaderRow {
+  public Guid Id;
+  public string Email = "";
+  public string Name = "";
+  public string State = "";
+  public string Lists = "";
+  public string Since = "";
+  public string Stopped = "";
+}
+
+/// The newest `take` readers on `listKey` ("" for everyone on any list) — for the desk, a page at a time.
+public List<ReaderRow> ListReaders(string listKey, int take = 100) {
+  var readers = listKey == ""
+    ? ListSubscriber.Where(s => s.State != SubscriberState.Erased).OrderByDescending(s => s.SignedUpAt).Take(take).ToList()
+    : ListMembership.Where(m => m.List.Key == listKey && m.Active).Select(m => m.Subscriber)
+        .OrderByDescending(s => s.SignedUpAt).Take(take).ToList();
+  var lists = ActiveListsOf(readers);
+  List<ReaderRow> rows = [];
+  foreach (var s in readers) {
+    rows.Add(new ReaderRow {
+      Id = s.Id, Email = s.Email, Name = s.Name ?? "", State = StateLabel(s.State),
+      Lists = string.Join(", ", lists.Where(m => m.Subscriber.Id == s.Id).Select(m => m.List.Name).ToList()),
+      Since = (s.ConfirmedAt ?? s.SignedUpAt).ToString("yyyy-MM-dd"),
+      Stopped = s.StoppedBecause == null ? "" : $"{StopLabel(s.StoppedBecause!.Value)}{(s.StopDetail == null ? "" : " — " + s.StopDetail)}",
+    });
+  }
+  return rows;
+}
+
+/// The lists `readers` are on — every one of theirs in one read, with its list, rather than a read per reader.
+[SuppressWarning("cost-unbounded-read")]   // the memberships of the readers the caller already holds — a few lists each
+List<ListMembership> ActiveListsOf(List<ListSubscriber> readers) {
+  if (readers.Count == 0) { return []; }
+  // In one order whatever order the readers came in — the desk's list (newest first) and its export (by address) then
+  // ask the SAME read, which a unit of work sends once. Unsorted, the second was sent again or not depending on how
+  // the two orders happened to fall.
+  var ids = readers.Select(s => s.Id).OrderBy(id => id).ToList();
+  return ListMembership.Where(m => ids.Contains(m.Subscriber.Id) && m.Active).Include(m => m.List).ToList();
+}
+
+string StateLabel(SubscriberState s) {
+  if (s == SubscriberState.Pending) { return "Waiting to confirm"; }
+  if (s == SubscriberState.Confirmed) { return "Confirmed"; }
+  if (s == SubscriberState.Suppressed) { return "Stopped"; }
+  return "Erased";
+}
+
+string StopLabel(StopReason r) {
+  if (r == StopReason.Bounced) { return "Bounced"; }
+  if (r == StopReason.Complained) { return "Marked as spam"; }
+  return "Stopped by staff";
+}
+
+/// The readers of `listKey` ("" for every list) as CSV — address, name, state, lists, when they joined and confirmed,
+/// and the words of the consent they gave: what a move to another mail service, or an authority, asks for. Written by
+/// `Osysharp.Csv`, so it opens in any spreadsheet as it is and no cell runs as a formula.
+[SuppressWarning("cost-unbounded-read")]   // an export of the list — every reader on it, with the consent each gave
+public string ExportReaders(string listKey) {
+  List<List<string>> rows = [];
+  var readers = listKey == ""
+    ? ListSubscriber.Where(s => s.State != SubscriberState.Erased).OrderBy(s => s.Email).ToList()
+    : ListMembership.Where(m => m.List.Key == listKey && m.Active).Select(m => m.Subscriber).OrderBy(s => s.Email).ToList();
+  // Every reader's lists and consents in one read each — not two reads per reader.
+  var lists = ActiveListsOf(readers);
+  var ids = readers.Select(s => s.Id).ToList();
+  var given = ids.Count == 0 ? [] : ListConsent.Where(c => ids.Contains(c.Subscriber.Id) && c.Kind == ConsentKind.Given)
+    .Include(c => c.List).OrderByDescending(c => c.At).ToList();
+  foreach (var s in readers) {
+    var consent = given.FirstOrDefault(c => c.Subscriber.Id == s.Id && (listKey == "" || (c.List != null && c.List.Key == listKey)));
+    rows.Add([
+      s.Email, s.Name ?? "", StateLabel(s.State),
+      string.Join("; ", lists.Where(m => m.Subscriber.Id == s.Id).Select(m => m.List.Key).ToList()),
+      s.SignedUpAt.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+      s.ConfirmedAt == null ? "" : s.ConfirmedAt!.Value.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+      consent == null ? "" : consent.Source, consent == null ? "" : consent.Words ?? "",
+    ]);
+  }
+  return WriteCsv(["email", "name", "state", "lists", "signed_up", "confirmed", "consent_source", "consent_words"], rows);
+}
+
+/// `ExportReaders(listKey)` as a file, and a short-lived signed link to download it — for the desk.
+public string ReadersFileLink(string listKey) {
+  var path = $"mailinglists/readers-{(listKey == "" ? "all" : listKey)}-{DateTime.UtcNow.ToString("yyyyMMddHHmmss")}.csv";
+  File.WriteAllBytes(path, Text.ToBytes(ExportReaders(listKey)));
+  return File.SignedUrl(path);
+}
+
+/// Everything the lists hold about `email` — its row, lists and every consent — as text, for a person asking what is
+/// kept about them. "" when the caller can see no such reader.
+public string ReaderRecord(string email) {
+  var s = ListSubscriber.FirstOrDefault(x => x.Email == ListAddress(email));
+  if (s == null) { return ""; }
+  var lines = new List<string>();
+  lines.Add($"Address: {s.Email}");
+  if (s.Name != null) { lines.Add($"Name: {s.Name}"); }
+  lines.Add($"State: {StateLabel(s.State)}");
+  lines.Add($"Signed up: {s.SignedUpAt:yyyy-MM-dd HH:mm} UTC");
+  if (s.ConfirmedAt != null) { lines.Add($"Confirmed: {s.ConfirmedAt:yyyy-MM-dd HH:mm} UTC"); }
+  foreach (var m in s.Memberships.OrderBy(x => x.JoinedAt).ToList()) {
+    lines.Add($"List: {m.List.Name} — {(m.Active ? "on it" : "left")} (joined {m.JoinedAt:yyyy-MM-dd})");
+  }
+  foreach (var c in s.Consents.OrderBy(x => x.At).ToList()) {
+    var about = c.List == null ? "every list" : c.List.Name;
+    lines.Add($"{c.At:yyyy-MM-dd HH:mm} UTC — {ConsentLabel(c.Kind)}, {about}, from {c.Source}{(c.Words == null ? "" : ": \"" + c.Words + "\"")}");
+  }
+  return string.Join("\n", lines);
+}
+
+string ConsentLabel(ConsentKind k) {
+  if (k == ConsentKind.Given) { return "asked to join"; }
+  if (k == ConsentKind.Confirmed) { return "confirmed the address"; }
+  return "left";
+}
+
+/// Staff stop mail to a reader, saying why.
+public void StopReader(ListSubscriber reader, string why) {
+  if (why.Trim() == "") { throw new Exception("Say why — it is kept with the reader."); }
+  SubscriberLifecycle.CorrelateStop(reader.Id, why.Trim());
+}
+
+/// A reader leaves `listKey` ("" for every list) — staff, or the reader from their account. `source` says which.
+public void TakeOffList(ListSubscriber reader, string listKey, string source) {
+  SubscriberLifecycle.CorrelateLeave(reader.Id, listKey, source);
+}
+
+/// Forgets the reader at `email` — address, name, lists, consents and what was sent to them. The caller must be able to
+/// see them (staff, or the reader from their account). Answers whether there was one.
+public bool EraseReader(string email) {
+  var s = ListSubscriber.FirstOrDefault(x => x.Email == ListAddress(email));
+  if (s == null || s.State == SubscriberState.Erased) { return false; }
+  SubscriberLifecycle.CorrelateErase(s.Id);
+  return true;
+}
+
+// ── the mail provider ────────────────────────────────────────────────────────────────────────────────────────
+
+/// The mail provider says `email` bounced (`complained` false) or its owner marked a mail as spam (true): nothing is
+/// sent to it again until its owner confirms it afresh. Call it from the app's webhook endpoint AFTER checking the
+/// provider's signature (`ResendWebhook.Verify` for Resend) — the check is the only thing standing between a stranger and
+/// everybody's subscription. Answers whether the address is on a list.
+public bool StopAddress(string email, bool complained, string detail) {
+  var address = ListAddress(email);
+  var outcome = complained ? SubscriberLifecycle.CorrelateComplained(address, detail)
+                           : SubscriberLifecycle.CorrelateBounced(address, detail);
+  return outcome == CorrelationOutcome.Deposited;
+}

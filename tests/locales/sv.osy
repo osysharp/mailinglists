@@ -1,0 +1,5 @@
+// The lists' test app speaks Swedish too, so a test can sign a reader up in Swedish and read the confirmation they are
+// sent in Swedish: the lists' own words come from kits/mailinglists/locales/sv.osy; this file only makes Swedish one of
+// the app's languages.
+translations sv {
+}

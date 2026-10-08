@@ -1,0 +1,34 @@
+// A campaign as an app writes one: a letter staff wrote, rendered for each reader with the link that lets them leave.
+
+using Osysharp.MailingLists;
+using Osysharp.EmailTemplates;
+
+public entity Letter {
+  [Required, MaxLength(200)] string Subject;
+  [Required, MaxLength(4000)] string Body;
+  security { allow read, create when IsStaff; }
+}
+
+[Email]
+public component LetterMail(Letter letter, string to, string unsubscribe) {
+  subject => letter.Subject;
+  render {
+    EmailLayout("Kit Test Shop", address: "1 Test Street, Testville", unsubscribe: unsubscribe) {
+      EmailText($"Dear {to},");
+      EmailText(letter.Body);
+    }
+  }
+}
+
+public class LetterToList : ListCampaign {
+  public Letter Letter;
+  public override string Key() { return $"letter-{Letter.Id}"; }
+  public override RenderedEmail For(ListSubscriber reader, string unsubscribe) {
+    return LetterMail(Letter, reader.Email, unsubscribe);
+  }
+}
+
+/// Staff send a letter to a list.
+public ListSendResult SendLetter(Letter letter, string listKey) {
+  return SendToList(new LetterToList { Letter = letter }, listKey);
+}

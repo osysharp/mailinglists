@@ -1,0 +1,351 @@
+// The lists, the people on them, and the consent each of them gave.
+//
+// ⚑ THE APP SAYS WHO, ONCE. Who runs the lists — `policy RunsMailingLists => IsStaff;` — and which address is a
+//   signed-in reader's own — `policy OwnsListAddress(string email) => email == user.Email;` — are the app's two
+//   answers: the kit cannot name the app's roles or its principal. Unanswered, nobody runs the lists and no account
+//   reads an address. A reader with no account reaches their row only through a LINK the platform signed — a grant
+//   (Links.osy) that reads that one row and its memberships — and every change it asks for is made by the row's
+//   workflow, never by a write the visitor could aim at somebody else's row.
+//
+// ⚑ DOUBLE OPT-IN. Signing up makes the address PENDING and mails it a link; only the owner of the mailbox can confirm
+//   it, and nothing is sent to a list's readers until they have. So typing someone else's address costs them one mail
+//   they can ignore, never a subscription.
+//
+// ⚑ CONSENT IS A RECORD, NOT A FLAG. Every time somebody joins, confirms or leaves, a row says when, from where, and the
+//   exact words they agreed to — what a data-protection authority asks for, and what nobody can reconstruct later.
+
+namespace Osysharp.MailingLists;
+
+using Osysharp.Workflow;
+
+/// Who runs the lists: sees every reader and their consent, makes a list's row, sends a campaign. The app answers it
+/// once with its own roles: `policy RunsMailingLists => IsStaff;`. Unanswered, nobody does.
+virtual policy RunsMailingLists => false;
+
+/// Whether `email` is the signed-in reader's own address — what lets them see, from their account, which lists they are
+/// on: `policy OwnsListAddress(string email) => email == user.Email;`. Unanswered, no account reads an address.
+virtual policy OwnsListAddress(string email) => false;
+
+// ⚠ Appended, never inserted: an enum is stored by position.
+public enum SubscriberState {
+  /// Signed up; the address has not been confirmed. Nothing is sent to it but the confirmation.
+  [Label("Waiting to confirm")] Pending,
+  [Label("Confirmed")] Confirmed,
+  /// The mail provider said the address bounced or its owner marked a mail as spam — or staff stopped it. Nothing is
+  /// sent to it until its owner confirms it again.
+  [Label("Stopped")] Suppressed,
+  /// Erased on request: what identified the person is gone.
+  [Label("Erased")] Erased,
+}
+
+// ⚠ Appended, never inserted.
+public enum ConsentKind {
+  /// Asked to join — the words they agreed to, where.
+  [Label("Asked to join")] Given,
+  /// Confirmed the address from the mail — the proof the mailbox is theirs.
+  [Label("Confirmed")] Confirmed,
+  /// Left — from a mail's link, the preferences page, their account, or staff.
+  [Label("Left")] Withdrawn,
+}
+
+// ⚠ Appended, never inserted.
+public enum StopReason {
+  [Label("Bounced")] Bounced,
+  [Label("Marked as spam")] Complained,
+  [Label("Stopped by staff")] Manual,
+}
+
+/// A list — made the first time somebody joins it; its name and what it sends are the app's declaration (`ListInfo`).
+[Authority(Extensible)]
+public entity MailingList {
+  [Required, Unique, MaxLength(60)] string Key;
+  [Required, MaxLength(120)] string Name;
+  security {
+    allow read when IsAnonymous || IsAuthenticated;
+    allow create, update when RunsMailingLists;
+  }
+}
+
+/// One address on the app's lists — one row per address, whichever lists it is on.
+[Authority(Extensible)]
+public entity ListSubscriber {
+  /// Trimmed and lower-case, so `Ada@x.se` and `ada@x.se ` are one reader.
+  [Required, Unique, MaxLength(255)] string Email;
+  [MaxLength(120)] string? Name;
+  /// The language they were reading when they signed up ("sv") — what the list's mail to them is written in.
+  [MaxLength(20)] string? Language;
+  SubscriberState State;                                  // no default — SubscriberLifecycle owns it
+  DateTime SignedUpAt;
+  DateTime? ConfirmedAt;
+  /// When the last confirmation mail went — a second sign-up within the hour does not send another.
+  DateTime? ConfirmMailedAt;
+  StopReason? StoppedBecause;
+  DateTime? StoppedAt;
+  [MaxLength(300)] string? StopDetail;
+  [ForeignKey(Subscriber)] ListMembership[] Memberships;
+  [ForeignKey(Subscriber)] ListConsent[] Consents;
+  security {
+    deny create, update, delete when IsAnonymous;
+    // A reader's own link reads their own row — and a confirmation link the row it confirms. Nothing else.
+    allow read by ListReaderLink;
+    allow read by ListConfirmation;
+    allow read when RunsMailingLists;
+    allow read when IsAuthenticated where OwnsListAddress(Email);
+  }
+}
+
+/// A reader on one list. `Active`: they want it (it goes to them once their address is confirmed and not stopped).
+[Authority(Extensible)]
+[Unique(Subscriber, List)]
+public entity ListMembership {
+  [Required] ListSubscriber Subscriber;
+  [Required] MailingList List;
+  bool Active = true;
+  DateTime JoinedAt;
+  DateTime? LeftAt;
+  security {
+    deny create, update, delete when IsAnonymous;
+    // …and which lists that reader is on, so the preferences page shows where they stand.
+    allow read by ListReaderLink where Subscriber == ListReaderLink.Row;
+    allow read when RunsMailingLists;
+    allow read when IsAuthenticated where OwnsListAddress(Subscriber.Email);
+  }
+}
+
+/// One act of consent — given, confirmed or withdrawn — with when, where and the words.
+[Authority(Extensible)]
+public entity ListConsent {
+  [Required] ListSubscriber Subscriber;
+  /// The list it was about; null for every list at once (confirming the address, leaving everything).
+  MailingList? List;
+  ConsentKind Kind;
+  DateTime At;
+  /// Where it happened — "checkout", "footer", "account", "unsubscribe link", "staff".
+  [Required, MaxLength(80)] string Source;
+  /// The exact words shown beside the box they ticked or the button they pressed.
+  [MaxLength(1000)] string? Words;
+  security {
+    deny create, update, delete when IsAnonymous;
+    allow read when RunsMailingLists;
+    allow read when IsAuthenticated where OwnsListAddress(Subscriber.Email);
+  }
+}
+
+/// A sign-up, as it arrives from a form: anybody may leave one, nobody reads it back. Its workflow — which writes as the
+/// app — finds or makes the reader, records the consent and mails the confirmation, then forgets the address.
+///
+/// ⚑ WHY A DOOR AND NOT A ROW OF ITS OWN. A visitor may not read the list, so they cannot know whether an address is on
+///   it — and must not: "already subscribed" would tell a stranger who reads the shop's letter. Every sign-up gets the
+///   same answer, and what it does is decided where the list is visible.
+[Authority(Extensible)]
+public entity ListSignup {
+  [Required, MaxLength(255)] string Email;
+  [MaxLength(120)] string? Name;
+  [Required, MaxLength(60)] string ListKey;
+  [Required, MaxLength(80)] string Source;
+  [MaxLength(1000)] string? Words;
+  /// The language the form was read in.
+  [MaxLength(20)] string? Language;
+  SignupState State;                                     // no default — SignupHandling owns it
+  DateTime At;
+  security {
+    allow create when IsAnonymous || IsAuthenticated;
+  }
+}
+
+public enum SignupState { Received, Done }
+
+/// A sign-up, handled as the app: it cannot be handled as the visitor, who may not see the list.
+public workflow SignupHandling {
+  Tracks    = ListSignup.State;
+  Autostart = true;
+  Initial   = Received;
+
+  state Received {
+    enter {
+      var s = this.Item;
+      var list = ListFor(s.ListKey);
+      var reader = ListSubscriber.FirstOrDefault(x => x.Email == s.Email);
+      if (reader == null) {
+        reader = new ListSubscriber { Email = s.Email, Name = s.Name, Language = s.Language, SignedUpAt = DateTime.UtcNow };
+      } else if (reader.State == SubscriberState.Erased) {
+        // An erased row keeps no address, so this cannot happen — but a sign-up must never revive one.
+        goto Done;
+      }
+      if (reader.Name == null && s.Name != null) { reader.Name = s.Name; }
+      // The language of their latest sign-up is the one they read in now.
+      if (s.Language != null) { reader.Language = s.Language; }
+      var member = reader.Memberships.FirstOrDefault(m => m.List == list);
+      if (member == null) { new ListMembership { Subscriber = reader, List = list, JoinedAt = DateTime.UtcNow }; }
+      else if (!member.Active) { member.Active = true; member.JoinedAt = DateTime.UtcNow; member.LeftAt = null; }
+      new ListConsent { Subscriber = reader, List = list, Kind = ConsentKind.Given, At = DateTime.UtcNow,
+                        Source = s.Source, Words = s.Words };
+      // A reader who has not confirmed (or who was stopped) is asked to — once an hour at most, so a form cannot be
+      // used to flood somebody's inbox.
+      if (reader.State != SubscriberState.Confirmed) {
+        if (reader.ConfirmMailedAt == null || reader.ConfirmMailedAt < DateTime.UtcNow.AddHours(-1)) {
+          SendConfirmation(reader, list);
+        }
+      }
+      // The door forgets the address once it is on the reader's row.
+      s.Email = "handled";
+      s.Name = null;
+      s.Words = null;
+      goto Done;
+    }
+  }
+
+  terminal success Done { }
+}
+
+/// The list row for `key`, made the first time it is needed. Refuses a key the app does not declare.
+MailingList ListFor(string key) {
+  var declared = ListDeclared(key);
+  if (declared == null) { throw new Exception($"There is no mailing list '{key}' — declare it in app.MailingLists."); }
+  var row = MailingList.FirstOrDefault(l => l.Key == key);
+  if (row == null) { row = new MailingList { Key = key, Name = declared.Name }; }
+  else if (row.Name != declared.Name) { row.Name = declared.Name; }
+  return row;
+}
+
+/// Mails `reader` the link that confirms their address.
+void SendConfirmation(ListSubscriber reader, MailingList list) {
+  var setup = App.Setting<MailingListSetup>();
+  var link = ListLink(setup.ConfirmPath, $"{ListConfirmation.For(reader)}");
+  setup.Mailer.Send(new ListMailOut {
+    To = reader.Email, Mail = setup.Mails.Confirmation(reader, list, link),
+    Key = $"confirm-{reader.Id}-{DateTime.UtcNow.Ticks}",
+  });
+  reader.ConfirmMailedAt = DateTime.UtcNow;
+}
+
+/// An address as a list keeps it — trimmed and lower-case.
+public string ListAddress(string email) {
+  return email.Trim().ToLower();
+}
+
+/// A reader's life on the lists. Every change a person asks for from outside the app — a confirm link, an unsubscribe
+/// link, the mail provider's word that an address bounced — arrives here by the reader's id or address, so whoever
+/// asks never needs to read the row.
+public workflow SubscriberLifecycle {
+  Tracks    = ListSubscriber.State;
+  Autostart = true;
+  Initial   = Pending;
+
+  /// The owner of the mailbox confirmed it — from the mailed link.
+  [CorrelateOn(this.Item.Id == subscriberId)]
+  event Confirm(Guid subscriberId);
+
+  /// Leave one list (`listKey`), or every list (""). `source`: where — "unsubscribe link", "account", "staff".
+  [CorrelateOn(this.Item.Id == subscriberId)]
+  event Leave(Guid subscriberId, string listKey, string source);
+
+  /// Join another list — from the preferences page or an account — with the words shown beside the button.
+  [CorrelateOn(this.Item.Id == subscriberId)]
+  event Join(Guid subscriberId, string listKey, string source, string words);
+
+  /// The mail provider: this address cannot take mail, or its owner marked a mail as spam.
+  [CorrelateOn(this.Item.Email == email)]
+  event Bounced(string email, string detail);
+  [CorrelateOn(this.Item.Email == email)]
+  event Complained(string email, string detail);
+
+  /// Staff stop mail to a reader, saying why.
+  [CorrelateOn(this.Item.Id == subscriberId)]
+  event Stop(Guid subscriberId, string detail);
+
+  /// Forget the reader: their address, name, lists and consents.
+  [CorrelateOn(this.Item.Id == subscriberId)]
+  event Erase(Guid subscriberId);
+
+  on Leave(Guid subscriberId, string listKey, string source) { LeaveLists(this.Item, listKey, source); }
+  on Join(Guid subscriberId, string listKey, string source, string words) { JoinList(this.Item, listKey, source, words); }
+  on Erase(Guid subscriberId) { Forget(this.Item); goto Erased; }
+
+  state Pending {
+    subscribe Confirm() as FirstConfirm;
+    subscribe Bounced() as BouncedPending;
+    subscribe Complained() as ComplainedPending;
+    subscribe Stop() as StoppedPending;
+    on FirstConfirm(Guid subscriberId) { Confirmation(this.Item); goto Confirmed; }
+    on BouncedPending(string email, string detail) { StopMail(this.Item, StopReason.Bounced, detail); goto Suppressed; }
+    on ComplainedPending(string email, string detail) { StopMail(this.Item, StopReason.Complained, detail); goto Suppressed; }
+    on StoppedPending(Guid subscriberId, string detail) { StopMail(this.Item, StopReason.Manual, detail); goto Suppressed; }
+  }
+
+  state Confirmed {
+    // A second confirm (the link clicked twice) is nothing new.
+    subscribe Confirm() as ConfirmedAgain;
+    subscribe Bounced() as BouncedActive;
+    subscribe Complained() as ComplainedActive;
+    subscribe Stop() as StoppedActive;
+    on ConfirmedAgain(Guid subscriberId) { }
+    on BouncedActive(string email, string detail) { StopMail(this.Item, StopReason.Bounced, detail); goto Suppressed; }
+    on ComplainedActive(string email, string detail) { StopMail(this.Item, StopReason.Complained, detail); goto Suppressed; }
+    on StoppedActive(Guid subscriberId, string detail) { StopMail(this.Item, StopReason.Manual, detail); goto Suppressed; }
+  }
+
+  state Suppressed {
+    // Confirming again — from a fresh sign-up's mail — is the owner saying, from the mailbox itself, that it takes mail.
+    subscribe Confirm() as Reconfirmed;
+    subscribe Bounced() as BouncedAgain;
+    subscribe Complained() as ComplainedAgain;
+    on Reconfirmed(Guid subscriberId) {
+      this.Item.StoppedBecause = null;
+      this.Item.StoppedAt = null;
+      this.Item.StopDetail = null;
+      Confirmation(this.Item);
+      goto Confirmed;
+    }
+    on BouncedAgain(string email, string detail) { StopMail(this.Item, StopReason.Bounced, detail); }
+    on ComplainedAgain(string email, string detail) { StopMail(this.Item, StopReason.Complained, detail); }
+  }
+
+  terminal cancel Erased { }
+}
+
+void Confirmation(ListSubscriber reader) {
+  reader.ConfirmedAt = DateTime.UtcNow;
+  new ListConsent { Subscriber = reader, Kind = ConsentKind.Confirmed, At = DateTime.UtcNow, Source = "confirmation link",
+                    Words = $"Confirmed {reader.Email} from the mail sent to it." };
+}
+
+void StopMail(ListSubscriber reader, StopReason why, string detail) {
+  reader.StoppedBecause = why;
+  reader.StoppedAt = DateTime.UtcNow;
+  reader.StopDetail = detail.Length > 300 ? detail.Substring(0, 300) : detail;
+}
+
+void LeaveLists(ListSubscriber reader, string listKey, string source) {
+  foreach (var m in reader.Memberships.Where(x => x.Active && (listKey == "" || x.List.Key == listKey)).ToList()) {
+    m.Active = false;
+    m.LeftAt = DateTime.UtcNow;
+    new ListConsent { Subscriber = reader, List = m.List, Kind = ConsentKind.Withdrawn, At = DateTime.UtcNow, Source = source };
+  }
+  if (listKey == "" && reader.Memberships.Count() == 0) {
+    new ListConsent { Subscriber = reader, Kind = ConsentKind.Withdrawn, At = DateTime.UtcNow, Source = source };
+  }
+}
+
+void JoinList(ListSubscriber reader, string listKey, string source, string words) {
+  var list = ListFor(listKey);
+  var member = reader.Memberships.FirstOrDefault(m => m.List == list);
+  if (member == null) { new ListMembership { Subscriber = reader, List = list, JoinedAt = DateTime.UtcNow }; }
+  else if (!member.Active) { member.Active = true; member.JoinedAt = DateTime.UtcNow; member.LeftAt = null; }
+  else { return; }
+  new ListConsent { Subscriber = reader, List = list, Kind = ConsentKind.Given, At = DateTime.UtcNow, Source = source,
+                    Words = words == "" ? null : words };
+}
+
+[SuppressWarning("cost-unbounded-read")]   // one reader's deliveries — an erasure must reach every one
+void Forget(ListSubscriber reader) {
+  // Every link ever mailed to them stops working — their preferences page, a confirmation still in the inbox.
+  ListReaderLink.RevokeAll(reader);
+  ListConfirmation.RevokeAll(reader);
+  foreach (var c in reader.Consents.ToList()) { c.Delete(); }
+  foreach (var m in reader.Memberships.ToList()) { m.Delete(); }
+  foreach (var d in ListDelivery.Where(x => x.Subscriber == reader).ToList()) { d.Delete(); }
+  reader.Email = $"erased-{reader.Id}@erased.invalid";
+  reader.Name = null;
+  reader.StopDetail = null;
+}

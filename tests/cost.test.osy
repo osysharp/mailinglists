@@ -1,0 +1,58 @@
+// WHAT THE LISTS' DESK COSTS AS A LIST GROWS — the readers, their lists, their consents and the counts are each read
+// once for the whole list, not once per reader. Each test asks at two readers and again at six; a read per reader
+// turns it red with both numbers.
+
+using Osysharp.MailingLists;
+
+/// `count` more readers signed up to the letter and confirmed, their addresses starting `token`.
+void MoreReaders(string token, int count) {
+  for (var i = 1; i <= count; i++) { Confirmed($"{token}{i}@example.test"); }
+}
+
+/// What the desk's three questions cost: statements for the readers, rows read for the counts, statements for the
+/// export — and what they answered.
+class DeskCost {
+  public int Readers = 0;
+  public int CountsRows = 0;
+  public int Export = 0;
+  public List<ReaderRow> Rows = [];
+  public List<ListSummary> Lists = [];
+  public string Csv = "";
+}
+
+DeskCost AskTheDesk() {
+  var cost = new DeskCost();
+  runas (Desk) {
+    var mark = Cost.Mark();
+    cost.Rows = ListReaders("letter");
+    cost.Readers = Cost.StatementsSince(mark);
+    mark = Cost.Mark();
+    cost.Lists = ListSummaries();
+    cost.CountsRows = Cost.RowsReadSince(mark);
+    mark = Cost.Mark();
+    cost.Csv = ExportReaders("letter");
+    cost.Export = Cost.StatementsSince(mark);
+  }
+  return cost;
+}
+
+/// ⭐ THE DESK'S LIST OF READERS, THE COUNTS AND THE EXPORT READ THE SAME FOR TWO READERS AND FOR SIX.
+[Test(People)]
+void the_desk_reads_the_same_however_many_readers_a_list_has() {
+  MoreReaders("two", 2);
+  AskTheDesk();   // the first asking sets up what every later one reuses — not what this compares
+  var two = AskTheDesk();
+  MoreReaders("six", 4);
+  var six = AskTheDesk();
+  Log.Information("Readers: " + two.Readers + " / " + six.Readers + " statements; counts: " + two.CountsRows + " / "
+                  + six.CountsRows + " rows; export: " + two.Export + " / " + six.Export + " statements, two readers / six");
+  Assert.Equal(2, two.Rows.Count);
+  Assert.Equal(6, six.Rows.Count);
+  Assert.True(six.Rows.All(r => r.Lists != ""));                              // each still names its list
+  Assert.Equal(6, six.Lists.Single(l => l.Key == "letter").Readers);
+  Assert.Contains("six4@example.test", six.Csv);
+  runas (Desk) { Assert.Equal(3, ListReaders("letter", 3).Count); }      // the desk reads a page, newest first
+  Assert.Equal(two.Readers, six.Readers);
+  Assert.Equal(two.CountsRows, six.CountsRows);
+  Assert.Equal(two.Export, six.Export);
+}

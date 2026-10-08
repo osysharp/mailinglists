@@ -1,0 +1,22 @@
+// The one mail a list sends of its own: the confirmation. In `Osysharp.EmailTemplates`' frame, with the app's brand and
+// address; an app that wants its own frame overrides `ListMails.Confirmation`.
+
+namespace Osysharp.MailingLists;
+
+using Osysharp.EmailTemplates;
+
+/// "Confirm your address": which list they asked for, the button that confirms it, and that ignoring it changes nothing.
+[Email]
+public component ListConfirmationMail(ListSubscriber reader, MailingList list, string confirmUrl) {
+  language => reader.Language;
+  subject => $"Confirm your subscription to {list.Name}";
+  render {
+    EmailLayout(App.Setting<MailingListSetup>().Brand, preview: "One click and you are on the list.",
+                address: App.Setting<MailingListSetup>().Address == "" ? null : App.Setting<MailingListSetup>().Address) {
+      EmailHeading("Please confirm your address");
+      EmailText($"You asked to receive {list.Name} at {reader.Email}. Confirm it is you, and it is on its way.");
+      EmailButton("Confirm my subscription", confirmUrl);
+      EmailNote("The link works for seven days. If you did not ask, ignore this mail — you will not hear from us again.");
+    }
+  }
+}
