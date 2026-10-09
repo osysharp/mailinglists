@@ -16,8 +16,8 @@
     {
       "name": "Osysharp.EmailTemplates",
       "kind": "package",
-      "version": "0.1.1",
-      "hash": "sha256:3ef5eb08590a6772a073aad43e6bae51b31126fb7ea4ce45f09d64d83200527a",
+      "version": "0.1.2",
+      "hash": "sha256:4254f7963a7b43790e4291dc1ccb28c7f24d3f9d52517ea4eb7d5aa99fa4056a",
       "minPlatform": "0.9.0",
       "shadow": "app-forkable",
       "source": "workspace:kits/emailtemplates",
@@ -26,8 +26,8 @@
     {
       "name": "Osysharp.Ui",
       "kind": "package",
-      "version": "2.17.1",
-      "hash": "sha256:17d6d844ed71d4d614d43a6993723da70b2d39241c31e9f9fb58250a5183263c",
+      "version": "2.18.1",
+      "hash": "sha256:5dae9b4103cc649967664228cc945c2d8b5bd9ff8d45e62bf9b67d9db079545e",
       "minPlatform": "0.9.0",
       "shadow": "app-forkable",
       "source": "workspace:Platform.Core/Dsl/OsySharp/Baseline/Capabilities/Ui"
@@ -35,8 +35,8 @@
     {
       "name": "Osysharp.Storage",
       "kind": "package",
-      "version": "1.2.0",
-      "hash": "sha256:0e45268f33acd5a0fe1dae3e886ab1d828824fc628f9a34efa81af746b0f57d0",
+      "version": "1.2.1",
+      "hash": "sha256:a344786f4417d7005fb72cb752389bc62ae3e8623fb2cce4b3982fc9b3c7699d",
       "minPlatform": "0.9.0",
       "shadow": "app-forkable",
       "source": "workspace:Platform.Core/Dsl/OsySharp/Baseline/Capabilities/Storage"
@@ -44,8 +44,8 @@
     {
       "name": "Osysharp.Workflow",
       "kind": "package",
-      "version": "1.0.0",
-      "hash": "sha256:c9b5bb60a8be44efc0030d73b0bd60bdab05926344a68fb4db29dc78ee94c2f8",
+      "version": "1.0.1",
+      "hash": "sha256:9f7ccf1f6dbf22b62e551b015333d41c46431491acd812fb626762531e2a97f8",
       "minPlatform": "0.9.0",
       "shadow": "app-forkable",
       "source": "workspace:Platform.Core/Dsl/OsySharp/Baseline/Capabilities/Workflow"

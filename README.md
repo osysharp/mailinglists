@@ -58,9 +58,9 @@ With Resend, send the one-click pair with the mail: `Headers = ListUnsubscribeHe
 ```osy
 // the pages the mails link to — the paths are MailingListSetup's, change them there. The parameters are the kit's
 // grants, so a link that does not check out never opens the page: the visitor gets InvalidLinkSurface instead.
-[Page("/newsletter/confirm/{link}")] [AllowAnonymous] component Confirm(ListConfirmation link) { render { ListConfirm(link); } }
-[Page("/newsletter/{link}")] [AllowAnonymous] component Preferences(ListReaderLink link) { render { ListPreferences(link); } }
-[Page("/newsletter/link-gone")] [AllowAnonymous] component LinkGone() { render { Text("That link has run out."); } }
+[Route("/newsletter/confirm/{link}")] [AllowAnonymous] component Confirm(ListConfirmation link) { render { ListConfirm(link); } }
+[Route("/newsletter/{link}")] [AllowAnonymous] component Preferences(ListReaderLink link) { render { ListPreferences(link); } }
+[Route("/newsletter/link-gone")] [AllowAnonymous] component LinkGone() { render { Text("That link has run out."); } }
 app.Ui = new AppUi { InvalidLinkSurface = LinkGone };
 
 // the one-click unsubscribe a mail client POSTs (RFC 8058) — an API route of yours:

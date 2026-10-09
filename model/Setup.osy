@@ -70,7 +70,7 @@ public class MailingListSetup {
   /// Where the sender is. A marketing mail must say so.
   public string Address = "";
   /// Where the app's pages are, after `App.BaseUrl`. `{link}` stands for the grant the link carries — the page's route
-  /// parameter of that name takes it (`[Page("/newsletter/{link}")] component P(ListReaderLink link)`).
+  /// parameter of that name takes it (`[Route("/newsletter/{link}")] component P(ListReaderLink link)`).
   public string ConfirmPath = "/newsletter/confirm/{link}";
   public string PreferencesPath = "/newsletter/{link}";
   /// Where a mail client POSTs the one-click unsubscribe (RFC 8058) — an API route the app declares for

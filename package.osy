@@ -6,7 +6,7 @@
 //   `ListMailer` the app names in `app.MailingLists`), so a mail provider that is down retries there and a list never
 //   holds a second copy of the app's mail.
 package Osysharp.MailingLists {
-  version     "0.2.0";
+  version     "0.2.1";
   minPlatform "0.9.0";
   summary     "mailing lists — double opt-in, consent recorded word for word, signed unsubscribe and preferences, suppression of bounces and complaints, export and erasure.";
   model "model/**/*.osy";

@@ -3,7 +3,7 @@
 using Osysharp.MailingLists;
 using Osysharp.Ui;
 
-[Page("/")]
+[Route("/")]
 [AllowAnonymous]
 component KitHome() {
   render {
@@ -15,16 +15,16 @@ component KitHome() {
 }
 
 // The links a mail carries are grants: the platform checks each before its page opens.
-[Page("/newsletter/confirm/{link}")] [AllowAnonymous] component KitConfirm(ListConfirmation link) { render { Box(p: 6) { ListConfirm(link); } } }
-[Page("/newsletter/{link}")] [AllowAnonymous] component KitPreferences(ListReaderLink link) { render { Box(p: 6) { ListPreferences(link); } } }
+[Route("/newsletter/confirm/{link}")] [AllowAnonymous] component KitConfirm(ListConfirmation link) { render { Box(p: 6) { ListConfirm(link); } } }
+[Route("/newsletter/{link}")] [AllowAnonymous] component KitPreferences(ListReaderLink link) { render { Box(p: 6) { ListPreferences(link); } } }
 
 /// What a link that does not check out opens instead — forged, expired, taken back.
 [AllowAnonymous] component KitLinkGone() {
   render { Box(p: 6) { Text("That link has run out. Use the one in a more recent mail from us."); } }
 }
 app.Ui = new AppUi { InvalidLinkSurface = KitLinkGone };
-[Page("/lists")] component KitDesk() { render { Box(p: 6) { DeskMailingLists(); } } }
-[Page("/me")] component KitMe() {
+[Route("/lists")] component KitDesk() { render { Box(p: 6) { DeskMailingLists(); } } }
+[Route("/me")] component KitMe() {
   var me = Session.CurrentUser;
   render { Box(p: 6) { ListChoices(me.Email); } }
 }
