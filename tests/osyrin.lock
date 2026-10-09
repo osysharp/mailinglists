@@ -16,8 +16,8 @@
     {
       "name": "Osysharp.EmailTemplates",
       "kind": "package",
-      "version": "0.1.2",
-      "hash": "sha256:4254f7963a7b43790e4291dc1ccb28c7f24d3f9d52517ea4eb7d5aa99fa4056a",
+      "version": "0.1.3",
+      "hash": "sha256:9317bf1d0dcd29c42f6106142af5b2b24c130b39bc11b2e36c87758aa5f25c5b",
       "minPlatform": "0.9.0",
       "shadow": "app-forkable",
       "source": "workspace:kits/emailtemplates",
@@ -35,8 +35,8 @@
     {
       "name": "Osysharp.MailingLists",
       "kind": "package",
-      "version": "0.2.1",
-      "hash": "sha256:37c2ab7921f26b7d8eecfd817b3a483383260e0ca51e4d9599b14ae1a36aa7ef",
+      "version": "0.2.2",
+      "hash": "sha256:6006a23682a96a904eb2fe3d1fb49315db0488ccb0b4cce3f7d068d8711d9179",
       "minPlatform": "0.9.0",
       "shadow": "app-forkable",
       "source": "workspace:kits/mailinglists",

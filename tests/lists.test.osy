@@ -293,7 +293,7 @@ void a_member_who_cannot_see_the_list_cannot_stop_or_erase_anyone() {
   runas (Desk) { Assert.Equal(1, ReadersOf("letter").Count); }
 }
 
-/// ⭐ A READER IS WRITTEN TO IN THE LANGUAGE THEY SIGNED UP IN (D-I18N1). The confirmation is sent by the lists' own
+/// ⭐ A READER IS WRITTEN TO IN THE LANGUAGE THEY SIGNED UP IN. The confirmation is sent by the lists' own
 /// workflow, where nobody's request is Swedish — so it is the language the form was read in, kept on the reader, that
 /// says it: a sign-up read in Swedish is confirmed in Swedish, one read in English in English.
 [Test(People)]

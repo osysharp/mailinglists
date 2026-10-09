@@ -1,6 +1,6 @@
 // The links a list's mail carries, and the doors they open — with no sign-in.
 //
-// A link is a GRANT (D-GRANT1): the platform mints it for ONE reader's row, signs it with the app's own key, and checks
+// A link is a GRANT: the platform mints it for ONE reader's row, signs it with the app's own key, and checks
 // it before any function that takes one runs — its signature, that it is this app's and this grant's, that it has not
 // expired, and that it has not been taken back. There is no key for the app to keep: the platform holds it.
 //
@@ -18,7 +18,7 @@
 //   (or subscribing) anybody by guessing ids, a confirmation link used to manage lists or the other way round, an old
 //   confirmation link confirming months later. Guarded by lists.test.osy
 //   a_link_signed_for_another_reader_or_another_purpose_does_nothing and
-//   a_confirmation_link_that_has_expired_confirms_nothing (the platform's side: RowGrantTests).
+//   a_confirmation_link_that_has_expired_confirms_nothing.
 
 namespace Osysharp.MailingLists;
 
