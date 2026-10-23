@@ -102,7 +102,10 @@ public component ListPreferences(ListReaderLink link, string heading = "Your mai
       }
       if (address != "") { Text($"For {address}. Switch any of them on or off.", color: Colors.TextMuted); }
       Stack(gap: 4) {
-        foreach (var c in choices) { ListChoiceRow(c, () => Toggle(c)); }
+        // Keyed by the list AND where it stands: the row's switch is seeded from `On`, so a new answer from the server
+        // (everything left at once, a refused change) is a fresh row showing it — and a shorter list keeps each row
+        // with its own list rather than its position.
+        foreach (var c in choices) { ListChoiceRow(c, () => Toggle(c), key: c.Key + (c.On ? ":on" : ":off")); }
       }
       if (note != "") { Text(note, role: UiRole.Status, fontWeight: FontWeight.Semibold); }
       // With one list, its own switch already is "everything".
@@ -131,7 +134,7 @@ public component ListChoices(string email, string source = "account") {
   }
   render {
     Stack(gap: 3, label: "Mail from us") {
-      foreach (var c in choices) { ListChoiceRow(c, () => Toggle(c)); }
+      foreach (var c in choices) { ListChoiceRow(c, () => Toggle(c), key: c.Key + (c.On ? ":on" : ":off")); }
       if (note != "") { Text(note, role: UiRole.Status, fontSize: FontSize.Label); }
     }
   }
